@@ -1,0 +1,361 @@
+import { NextRequest, NextResponse } from "next/server"
+import { sql } from "@/lib/db"
+import { getUserFromRequest, logAuditEvent } from "@/lib/auth"
+import { z } from "zod"
+import { SUBSCRIPTION_TIERS } from "../route"
+
+const updateSubscriptionSchema = z.object({
+  tier: z.enum(["FREE", "PREMIUM", "PREMIUM_PLUS"]),
+  billingPeriod: z.enum(["MONTHLY", "YEARLY"]).default("MONTHLY"),
+})
+
+// Upgrade/downgrade subscription (owner only)
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ familyId: string }> }
+) {
+  try {
+    const { familyId } = await params
+    const { user, error } = await getUserFromRequest(request)
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: error || "Not authenticated" },
+        { status: 401 }
+      )
+    }
+
+    // Verify user is family owner
+    const families = await sql`
+      SELECT owner_id FROM families WHERE id = ${familyId}
+    `
+
+    if (families.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Family not found" },
+        { status: 404 }
+      )
+    }
+
+    if (families[0].owner_id !== user.id) {
+      return NextResponse.json(
+        { success: false, error: "Only the family owner can manage subscriptions" },
+        { status: 403 }
+      )
+    }
+
+    const body = await request.json()
+    const { tier, billingPeriod } = updateSubscriptionSchema.parse(body)
+
+    // Get current subscription
+    const currentSubs = await sql`
+      SELECT id, tier, status FROM subscriptions 
+      WHERE family_id = ${familyId} 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `
+
+    const currentTier = currentSubs.length > 0 ? currentSubs[0].tier : "FREE"
+
+    // For now, simulate subscription change without Stripe
+    // In production, this would integrate with Stripe
+    const now = new Date()
+    const periodEnd = new Date(now)
+    if (billingPeriod === "YEARLY") {
+      periodEnd.setFullYear(periodEnd.getFullYear() + 1)
+    } else {
+      periodEnd.setMonth(periodEnd.getMonth() + 1)
+    }
+
+    if (currentSubs.length > 0) {
+      // Update existing subscription
+      await sql`
+        UPDATE subscriptions SET
+          tier = ${tier},
+          status = 'ACTIVE',
+          current_period_start = ${now.toISOString()},
+          current_period_end = ${periodEnd.toISOString()},
+          cancel_at_period_end = false,
+          updated_at = NOW()
+        WHERE id = ${currentSubs[0].id}
+      `
+
+      // Record transaction
+      const tierInfo = SUBSCRIPTION_TIERS[tier as keyof typeof SUBSCRIPTION_TIERS]
+      const amount = billingPeriod === "YEARLY" ? tierInfo.priceYearly : tierInfo.priceMonthly
+
+      if (amount > 0) {
+        await sql`
+          INSERT INTO payment_transactions (
+            id, subscription_id, amount, currency, status, description, created_at
+          )
+          VALUES (
+            ${crypto.randomUUID()},
+            ${currentSubs[0].id},
+            ${amount},
+            'usd',
+            'COMPLETED',
+            ${`Subscription ${currentTier === tier ? "renewal" : currentTier < tier ? "upgrade" : "downgrade"} to ${tier}`},
+            NOW()
+          )
+        `
+      }
+    } else {
+      // Create new subscription
+      const subscriptionId = crypto.randomUUID()
+      await sql`
+        INSERT INTO subscriptions (
+          id, family_id, tier, status,
+          current_period_start, current_period_end,
+          created_at, updated_at
+        )
+        VALUES (
+          ${subscriptionId},
+          ${familyId},
+          ${tier},
+          'ACTIVE',
+          ${now.toISOString()},
+          ${periodEnd.toISOString()},
+          NOW(), NOW()
+        )
+      `
+    }
+
+    // Audit log
+    await logAuditEvent(user.id, "UPDATE", "subscription", familyId, {
+      oldValue: { tier: currentTier },
+      newValue: { tier, billingPeriod },
+      ipAddress: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined,
+      userAgent: request.headers.get("user-agent") || undefined,
+    })
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        tier,
+        status: "ACTIVE",
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        tierInfo: SUBSCRIPTION_TIERS[tier as keyof typeof SUBSCRIPTION_TIERS],
+      },
+      message: `Subscription ${currentTier === tier ? "renewed" : "updated"} to ${tier}`,
+    })
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { success: false, error: error.errors[0].message },
+        { status: 400 }
+      )
+    }
+
+    console.error("Update subscription error:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to update subscription" },
+      { status: 500 }
+    )
+  }
+}
+
+// Cancel subscription (owner only) - Creates admin ticket for processing
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ familyId: string }> }
+) {
+  try {
+    const { familyId } = await params
+    const { user, error } = await getUserFromRequest(request)
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: error || "Not authenticated" },
+        { status: 401 }
+      )
+    }
+
+    // Verify user is family owner
+    const families = await sql`
+      SELECT owner_id, name FROM families WHERE id = ${familyId}
+    `
+
+    if (families.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Family not found" },
+        { status: 404 }
+      )
+    }
+
+    if (families[0].owner_id !== user.id) {
+      return NextResponse.json(
+        { success: false, error: "Only the family owner can cancel subscriptions" },
+        { status: 403 }
+      )
+    }
+
+    // Get current subscription
+    const subscriptions = await sql`
+      SELECT id, tier, current_period_end, status FROM subscriptions 
+      WHERE family_id = ${familyId} AND status IN ('ACTIVE', 'TRIALING')
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `
+
+    if (subscriptions.length === 0 || subscriptions[0].tier === "FREE") {
+      return NextResponse.json(
+        { success: false, error: "No active paid subscription to cancel" },
+        { status: 400 }
+      )
+    }
+
+    const subscription = subscriptions[0]
+    const family = families[0]
+
+    // Set to cancel at period end (don't immediately cancel)
+    await sql`
+      UPDATE subscriptions SET
+        cancel_at_period_end = true,
+        updated_at = NOW()
+      WHERE id = ${subscription.id}
+    `
+
+    // Generate ticket number
+    const ticketCount = await sql`SELECT COUNT(*) as count FROM support_tickets`
+    const ticketNumber = `SUB-${String(Number(ticketCount[0].count) + 1).padStart(6, '0')}`
+
+    // Create support ticket for admin to process the cancellation
+    const ticketId = crypto.randomUUID()
+    await sql`
+      INSERT INTO support_tickets (
+        id, ticket_number, user_id, family_id, 
+        category, subject, description, 
+        status, priority,
+        created_at, updated_at
+      )
+      VALUES (
+        ${ticketId},
+        ${ticketNumber},
+        ${user.id},
+        ${familyId},
+        'subscription',
+        ${'Subscription Cancellation Request - ' + (subscription.tier === 'PREMIUM' ? 'Basic' : 'Premium')},
+        ${`User has requested to cancel their ${subscription.tier === 'PREMIUM' ? 'Basic ($3.99/mo)' : 'Premium ($7.99/mo)'} subscription for family "${family.name}".
+
+Current subscription status: ${subscription.status}
+Current period ends: ${new Date(subscription.current_period_end).toLocaleDateString()}
+
+Please process the cancellation in the AMEX merchant portal and update the subscription status accordingly.
+
+The subscription has been marked as cancel_at_period_end = true in the database.`},
+        'open',
+        'normal',
+        NOW(),
+        NOW()
+      )
+    `
+
+    // Record subscription status change history
+    await sql`
+      INSERT INTO subscription_status_history (
+        id, subscription_id, old_status, new_status, 
+        notes, ticket_id, changed_at, source
+      )
+      VALUES (
+        ${crypto.randomUUID()},
+        ${subscription.id},
+        ${subscription.status},
+        'PENDING_CANCELLATION',
+        'User requested cancellation via app',
+        ${ticketId},
+        NOW(),
+        'user_request'
+      )
+    `
+
+    // Audit log
+    await logAuditEvent(user.id, "UPDATE", "subscription_cancel", familyId, {
+      oldValue: { tier: subscription.tier, status: subscription.status },
+      newValue: { cancelAtPeriodEnd: true, ticketId, ticketNumber },
+      ipAddress: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined,
+      userAgent: request.headers.get("user-agent") || undefined,
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: `Cancellation request submitted. Your subscription will remain active until ${new Date(subscription.current_period_end).toLocaleDateString()}. Ticket #${ticketNumber} has been created for processing.`,
+      data: {
+        cancelAtPeriodEnd: true,
+        currentPeriodEnd: subscription.current_period_end,
+        ticketNumber,
+        ticketId,
+      },
+    })
+  } catch (error) {
+    console.error("Cancel subscription error:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to cancel subscription" },
+      { status: 500 }
+    )
+  }
+}
+
+// Get subscription history
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ familyId: string }> }
+) {
+  try {
+    const { familyId } = await params
+    const { user, error } = await getUserFromRequest(request)
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: error || "Not authenticated" },
+        { status: 401 }
+      )
+    }
+
+    // Verify user is a PARENT in the family
+    const membership = await sql`
+      SELECT role FROM family_members 
+      WHERE family_id = ${familyId} AND user_id = ${user.id} AND is_active = true
+    `
+
+    if (membership.length === 0 || membership[0].role !== "PARENT") {
+      return NextResponse.json(
+        { success: false, error: "Only parents can view subscription history" },
+        { status: 403 }
+      )
+    }
+
+    // Get payment history
+    const transactions = await sql`
+      SELECT 
+        pt.id, pt.amount, pt.currency, pt.status, pt.description, pt.created_at
+      FROM payment_transactions pt
+      JOIN subscriptions s ON pt.subscription_id = s.id
+      WHERE s.family_id = ${familyId}
+      ORDER BY pt.created_at DESC
+      LIMIT 50
+    `
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        transactions: transactions.map(t => ({
+          id: t.id,
+          amount: t.amount,
+          currency: t.currency,
+          status: t.status,
+          description: t.description,
+          createdAt: t.created_at,
+          formattedAmount: `$${(t.amount / 100).toFixed(2)}`,
+        })),
+      },
+    })
+  } catch (error) {
+    console.error("Get subscription history error:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to get subscription history" },
+      { status: 500 }
+    )
+  }
+}

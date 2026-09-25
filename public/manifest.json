@@ -1,0 +1,58 @@
+{
+  "name": "Togethr - Family Coordination",
+  "short_name": "Togethr",
+  "description": "Keep your family connected and coordinated with shared calendars, location sharing, and event management.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#3b4563",
+  "theme_color": "#3b4563",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en",
+  "categories": ["lifestyle", "family", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/togethr-icon-blue.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/togethr-icon-blue.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/togethr-icon-orange.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "View family dashboard",
+      "url": "/dashboard",
+      "icons": [{ "src": "/icons/togethr-icon-blue.png", "sizes": "512x512", "type": "image/png" }]
+    },
+    {
+      "name": "Calendar",
+      "short_name": "Calendar",
+      "description": "View family calendar",
+      "url": "/calendar",
+      "icons": [{ "src": "/icons/togethr-icon-blue.png", "sizes": "512x512", "type": "image/png" }]
+    },
+    {
+      "name": "Family",
+      "short_name": "Family",
+      "description": "Manage family members",
+      "url": "/family",
+      "icons": [{ "src": "/icons/togethr-icon-blue.png", "sizes": "512x512", "type": "image/png" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}

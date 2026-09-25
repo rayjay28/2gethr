@@ -1,0 +1,114 @@
+import { NextRequest, NextResponse } from "next/server"
+import { sql } from "@/lib/db"
+import { getUserFromRequest } from "@/lib/auth"
+
+// POST - Archive all completed/cancelled tasks for the family
+export async function POST(request: NextRequest) {
+  try {
+    const { user, error } = await getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ success: false, error: error || "Unauthorized" }, { status: 401 })
+    }
+
+    // Get family ID
+    const familyMembership = await sql`
+      SELECT family_id FROM family_members 
+      WHERE user_id = ${user.id} AND is_active = true
+      LIMIT 1
+    `
+
+    if (familyMembership.length === 0) {
+      return NextResponse.json({ success: false, error: "No family found" }, { status: 404 })
+    }
+
+    const familyId = familyMembership[0].family_id
+
+    // Archive all completed or cancelled tasks
+    const result = await sql`
+      UPDATE tasks 
+      SET status = 'ARCHIVED', updated_at = NOW()
+      WHERE family_id = ${familyId}
+      AND status IN ('COMPLETED', 'CANCELLED')
+      RETURNING id
+    `
+
+    // Log history for each archived task
+    for (const task of result) {
+      await sql`
+        INSERT INTO task_history (task_id, user_id, action, new_value)
+        VALUES (${task.id}, ${user.id}, 'ARCHIVED', '{"bulk": true}'::jsonb)
+      `
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      archivedCount: result.length,
+      message: `${result.length} task(s) archived`
+    })
+  } catch (error) {
+    console.error("Bulk archive tasks error:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to archive tasks" },
+      { status: 500 }
+    )
+  }
+}
+
+// GET - Fetch archived tasks for the family
+export async function GET(request: NextRequest) {
+  try {
+    const { user, error } = await getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ success: false, error: error || "Unauthorized" }, { status: 401 })
+    }
+
+    // Get family ID
+    const familyMembership = await sql`
+      SELECT family_id FROM family_members 
+      WHERE user_id = ${user.id} AND is_active = true
+      LIMIT 1
+    `
+
+    if (familyMembership.length === 0) {
+      return NextResponse.json({ success: false, error: "No family found" }, { status: 404 })
+    }
+
+    const familyId = familyMembership[0].family_id
+
+    // Fetch archived tasks
+    const archivedTasks = await sql`
+      SELECT 
+        t.id, t.title, t.description, t.status, t.priority, t.category,
+        t.due_date, t.created_at, t.updated_at,
+        u.first_name as creator_first_name, u.last_name as creator_last_name
+      FROM tasks t
+      LEFT JOIN users u ON t.created_by_id = u.id
+      WHERE t.family_id = ${familyId}
+      AND t.status = 'ARCHIVED'
+      ORDER BY t.updated_at DESC
+      LIMIT 100
+    `
+
+    const tasks = archivedTasks.map(t => ({
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      status: t.status,
+      priority: t.priority,
+      category: t.category,
+      dueDate: t.due_date,
+      createdAt: t.created_at,
+      updatedAt: t.updated_at,
+      archivedAt: t.updated_at,
+      creatorName: t.creator_first_name ? `${t.creator_first_name} ${t.creator_last_name || ''}`.trim() : null,
+    }))
+
+    return NextResponse.json({ success: true, tasks })
+  } catch (error) {
+    console.error("Get archived tasks error:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch archived tasks" },
+      { status: 500 }
+    )
+  }
+}

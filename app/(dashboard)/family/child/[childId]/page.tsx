@@ -1,0 +1,347 @@
+'use client'
+
+import { use } from 'react'
+import { useRouter } from 'next/navigation'
+import useSWR from 'swr'
+import { getAccessToken } from '@/hooks/use-auth'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Empty } from '@/components/ui/empty'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { 
+  ArrowLeft, 
+  Baby, 
+  Calendar, 
+  ListTodo, 
+  Clock, 
+  MapPin,
+  GraduationCap,
+  School
+} from 'lucide-react'
+import Link from 'next/link'
+import { format, formatDistanceToNow, parseISO, isValid } from 'date-fns'
+
+interface ChildProfile {
+  id: string
+  displayName: string
+  avatarUrl: string | null
+  grade: string | null
+  school: string | null
+  age: number | null
+  birthDate: string | null
+  familyId: string
+  familyName: string
+}
+
+interface Task {
+  id: string
+  title: string
+  status: string
+  priority: string
+  due_date: string | null
+  category: string | null
+}
+
+interface Event {
+  id: string
+  title: string
+  start_time: string
+  end_time: string
+  is_all_day: boolean
+  location: string | null
+  color: string | null
+}
+
+interface ChildData {
+  profile: ChildProfile
+  tasks: Task[]
+  events: Event[]
+}
+
+const fetcher = async (url: string) => {
+  const token = getAccessToken()
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error('Failed to fetch')
+  const data = await res.json()
+  return data.data
+}
+
+function getPriorityColor(priority: string) {
+  switch (priority) {
+    case 'HIGH': return 'text-red-500'
+    case 'MEDIUM': return 'text-yellow-500'
+    case 'LOW': return 'text-green-500'
+    default: return 'text-muted-foreground'
+  }
+}
+
+function formatDueDate(dateStr: string | null) {
+  if (!dateStr) return 'No due date'
+  try {
+    const date = parseISO(dateStr)
+    if (!isValid(date)) return 'No due date'
+    return format(date, 'MMM d, yyyy')
+  } catch {
+    return 'No due date'
+  }
+}
+
+function formatEventTime(dateStr: string, isAllDay: boolean) {
+  if (isAllDay) return 'All day'
+  try {
+    const date = parseISO(dateStr)
+    if (!isValid(date)) return ''
+    return format(date, 'h:mm a')
+  } catch {
+    return ''
+  }
+}
+
+export default function ChildProfilePage({
+  params,
+}: {
+  params: Promise<{ childId: string }>
+}) {
+  const { childId } = use(params)
+  const router = useRouter()
+  
+  const { data: childData, isLoading, error } = useSWR<ChildData>(
+    `/api/children/${childId}`,
+    fetcher
+  )
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 p-4 sm:p-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </div>
+        <Skeleton className="h-64 w-full" />
+      </div>
+    )
+  }
+
+  if (error || !childData) {
+    return (
+      <div className="p-4 sm:p-6">
+        <Button variant="ghost" size="sm" onClick={() => router.back()} className="mb-4">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back
+        </Button>
+        <Empty
+          title="Child not found"
+          description="The child profile you're looking for doesn't exist or you don't have permission to view it."
+        />
+      </div>
+    )
+  }
+
+  const { profile, tasks, events } = childData
+  const initials = profile.displayName
+    ?.split(' ')
+    .map(n => n[0])
+    .join('')
+    .toUpperCase() || '?'
+
+  return (
+    <div className="space-y-6 p-4 sm:p-6 pb-24 sm:pb-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="w-5 h-5" />
+        </Button>
+        <Avatar className="w-14 h-14">
+          <AvatarImage src={profile.avatarUrl ? `/api/files?pathname=${encodeURIComponent(profile.avatarUrl)}` : undefined} />
+          <AvatarFallback className="bg-primary/10 text-primary text-xl">
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">{profile.displayName}</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="secondary" className="bg-primary/10 text-primary">
+              <Baby className="w-3 h-3 mr-1" />
+              Child
+            </Badge>
+            {profile.grade && (
+              <Badge variant="outline">
+                <GraduationCap className="w-3 h-3 mr-1" />
+                {profile.grade}
+              </Badge>
+            )}
+            {profile.school && (
+              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                <School className="w-3 h-3" />
+                {profile.school}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <ListTodo className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{tasks.length}</p>
+                <p className="text-sm text-muted-foreground">Active Tasks</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Calendar className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{events.length}</p>
+                <p className="text-sm text-muted-foreground">Upcoming Events</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tasks & Events Tabs */}
+      <Tabs defaultValue="tasks" className="w-full">
+        <TabsList className="w-full grid grid-cols-2">
+          <TabsTrigger value="tasks">
+            <ListTodo className="w-4 h-4 mr-2" />
+            Tasks
+          </TabsTrigger>
+          <TabsTrigger value="events">
+            <Calendar className="w-4 h-4 mr-2" />
+            Events
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tasks" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Assigned Tasks</CardTitle>
+              <CardDescription>Tasks assigned to {profile.displayName}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {tasks.length === 0 ? (
+                <Empty
+                  title="No tasks"
+                  description="No tasks have been assigned yet"
+                />
+              ) : (
+                <div className="space-y-3">
+                  {tasks.map((task) => (
+                    <Link
+                      key={task.id}
+                      href={`/tasks/${task.id}`}
+                      className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                    >
+                      <div className={`w-2 h-2 rounded-full ${getPriorityColor(task.priority)} bg-current flex-shrink-0`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{task.title}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Clock className="w-3 h-3" />
+                          {formatDueDate(task.due_date)}
+                          {task.category && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0">
+                              {task.category}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <Badge 
+                        variant={task.status === 'IN_PROGRESS' ? 'default' : 'secondary'}
+                        className="text-xs flex-shrink-0"
+                      >
+                        {task.status.replace('_', ' ')}
+                      </Badge>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="events" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Upcoming Events</CardTitle>
+              <CardDescription>Events {profile.displayName} is participating in</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {events.length === 0 ? (
+                <Empty
+                  title="No upcoming events"
+                  description="No events scheduled in the next 7 days"
+                />
+              ) : (
+                <div className="space-y-3">
+                  {events.map((event) => (
+                    <Link
+                      key={event.id}
+                      href={`/calendar?event=${event.id}`}
+                      className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                    >
+                      <div 
+                        className="w-1 h-12 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: event.color || '#0d9488' }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{event.title}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {formatDueDate(event.start_time)}
+                          </span>
+                          <span>{formatEventTime(event.start_time, event.is_all_day)}</span>
+                          {event.location && (
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {event.location}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Quick Actions */}
+      <div className="flex gap-3">
+        <Button asChild className="flex-1">
+          <Link href={`/tasks/new?childId=${childId}`}>
+            <ListTodo className="w-4 h-4 mr-2" />
+            Assign Task
+          </Link>
+        </Button>
+        <Button variant="outline" asChild className="flex-1">
+          <Link href={`/calendar/new?childId=${childId}`}>
+            <Calendar className="w-4 h-4 mr-2" />
+            Add Event
+          </Link>
+        </Button>
+      </div>
+    </div>
+  )
+}

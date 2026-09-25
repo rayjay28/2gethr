@@ -1,0 +1,421 @@
+import { sql } from '@/lib/db'
+
+// Local enums to match database
+const SubscriptionTier = {
+  FREE: "FREE",
+  PREMIUM: "PREMIUM",
+  PREMIUM_PLUS: "PREMIUM_PLUS",
+} as const
+
+const SubscriptionStatus = {
+  ACTIVE: "ACTIVE",
+  PAST_DUE: "PAST_DUE",
+  CANCELLED: "CANCELLED",
+  EXPIRED: "EXPIRED",
+  TRIALING: "TRIALING",
+} as const
+
+// Premium feature definitions
+export const PREMIUM_FEATURES = {
+  UNLIMITED_CHILDREN: "unlimited_children",
+  ADVANCED_REMINDERS: "advanced_reminders",
+  CUSTOM_REMINDER_TIMES: "custom_reminder_times",
+  LOCATION_SHARING: "location_sharing",
+  GEOFENCE_ALERTS: "geofence_alerts",
+  ADVANCED_RECURRING: "advanced_recurring",
+  EXTENDED_HISTORY: "extended_history",
+  PHONE_ALERTS: "phone_alerts",
+  SMS_NOTIFICATIONS: "sms_notifications",
+} as const
+
+// Feature access by tier
+// FREE: $0, PREMIUM (Basic): $2.99/mo, PREMIUM_PLUS (Premium): $4.99/mo
+const TIER_FEATURES: Record<string, string[]> = {
+  [SubscriptionTier.FREE]: [],
+  [SubscriptionTier.PREMIUM]: [
+    PREMIUM_FEATURES.ADVANCED_REMINDERS,
+    PREMIUM_FEATURES.ADVANCED_RECURRING,
+    PREMIUM_FEATURES.SMS_NOTIFICATIONS,
+  ],
+  [SubscriptionTier.PREMIUM_PLUS]: [
+    PREMIUM_FEATURES.UNLIMITED_CHILDREN,
+    PREMIUM_FEATURES.ADVANCED_REMINDERS,
+    PREMIUM_FEATURES.CUSTOM_REMINDER_TIMES,
+    PREMIUM_FEATURES.LOCATION_SHARING,
+    PREMIUM_FEATURES.GEOFENCE_ALERTS,
+    PREMIUM_FEATURES.ADVANCED_RECURRING,
+    PREMIUM_FEATURES.EXTENDED_HISTORY,
+    PREMIUM_FEATURES.PHONE_ALERTS,
+    PREMIUM_FEATURES.SMS_NOTIFICATIONS,
+  ],
+}
+
+// Tier limits
+const TIER_LIMITS = {
+  [SubscriptionTier.FREE]: { maxChildren: 2, historyDays: 30 },
+  [SubscriptionTier.PREMIUM]: { maxChildren: 5, historyDays: 90 },
+  [SubscriptionTier.PREMIUM_PLUS]: { maxChildren: -1, historyDays: 365 }, // -1 = unlimited
+}
+
+export interface SubscriptionInfo {
+  id: string
+  familyId: string
+  tier: string
+  status: string
+  currentPeriodStart: Date | null
+  currentPeriodEnd: Date | null
+  trialEnd: Date | null
+  cancelAtPeriodEnd: boolean
+}
+
+export interface GooglePlayPurchase {
+  purchaseToken: string
+  productId: string
+  purchaseTime: number
+  expiryTime?: number
+  autoRenewing?: boolean
+  acknowledged?: boolean
+}
+
+/**
+ * Get family subscription info
+ */
+export async function getFamilySubscription(familyId: string): Promise<SubscriptionInfo | null> {
+  const result = await sql`
+    SELECT id, family_id, tier, status, current_period_start, current_period_end,
+           trial_ends_at, cancel_at_period_end
+    FROM subscriptions
+    WHERE family_id = ${familyId}
+    ORDER BY created_at DESC
+    LIMIT 1
+  `
+  
+  if (result.length === 0) return null
+  
+  const sub = result[0]
+  return {
+    id: sub.id,
+    familyId: sub.family_id,
+    tier: sub.tier,
+    status: sub.status,
+    currentPeriodStart: sub.current_period_start,
+    currentPeriodEnd: sub.current_period_end,
+    trialEnd: sub.trial_ends_at,
+    cancelAtPeriodEnd: sub.cancel_at_period_end,
+  }
+}
+
+/**
+ * Check if family has premium access (active subscription)
+ */
+export async function getFamilyPremiumAccess(familyId: string): Promise<{
+  hasPremium: boolean
+  tier: string
+  features: string[]
+  limits: { maxChildren: number; historyDays: number }
+}> {
+  const subscription = await getFamilySubscription(familyId)
+  
+  if (!subscription) {
+    return {
+      hasPremium: false,
+      tier: SubscriptionTier.FREE,
+      features: TIER_FEATURES[SubscriptionTier.FREE],
+      limits: TIER_LIMITS[SubscriptionTier.FREE],
+    }
+  }
+  
+  const isActive = subscription.status === SubscriptionStatus.ACTIVE ||
+    subscription.status === SubscriptionStatus.TRIALING
+  
+  const effectiveTier = isActive ? subscription.tier : SubscriptionTier.FREE
+  
+  return {
+    hasPremium: isActive && effectiveTier !== SubscriptionTier.FREE,
+    tier: effectiveTier,
+    features: TIER_FEATURES[effectiveTier] || [],
+    limits: TIER_LIMITS[effectiveTier] || TIER_LIMITS[SubscriptionTier.FREE],
+  }
+}
+
+/**
+ * Check if a specific premium feature is available
+ */
+export async function canUsePremiumFeature(
+  familyId: string,
+  feature: string
+): Promise<boolean> {
+  const access = await getFamilyPremiumAccess(familyId)
+  return access.features.includes(feature)
+}
+
+/**
+ * Check if family can add more children
+ */
+export async function canAddChild(familyId: string): Promise<{
+  allowed: boolean
+  currentCount: number
+  maxAllowed: number
+}> {
+  const access = await getFamilyPremiumAccess(familyId)
+  
+  const countResult = await sql`
+    SELECT COUNT(*) as count
+    FROM child_profiles cp
+    JOIN family_members fm ON cp.family_member_id = fm.id
+    WHERE fm.family_id = ${familyId}
+  `
+  
+  const currentCount = parseInt(countResult[0].count, 10)
+  const maxAllowed = access.limits.maxChildren
+  
+  return {
+    allowed: maxAllowed === -1 || currentCount < maxAllowed,
+    currentCount,
+    maxAllowed: maxAllowed === -1 ? Infinity : maxAllowed,
+  }
+}
+
+/**
+ * Normalize Google Play subscription to internal status
+ */
+export function normalizeSubscriptionStatus(
+  purchase: GooglePlayPurchase
+): { tier: string; status: string; periodEnd: Date | null } {
+  const now = Date.now()
+  
+  // Determine tier from product ID
+  let tier = SubscriptionTier.FREE
+  if (purchase.productId.includes("premium_plus")) {
+    tier = SubscriptionTier.PREMIUM_PLUS
+  } else if (purchase.productId.includes("premium")) {
+    tier = SubscriptionTier.PREMIUM
+  }
+  
+  // Determine status
+  let status = SubscriptionStatus.ACTIVE
+  const expiryTime = purchase.expiryTime || 0
+  
+  if (expiryTime && expiryTime < now) {
+    status = SubscriptionStatus.EXPIRED
+    tier = SubscriptionTier.FREE
+  } else if (!purchase.autoRenewing) {
+    status = SubscriptionStatus.CANCELLED
+  }
+  
+  return {
+    tier,
+    status,
+    periodEnd: expiryTime ? new Date(expiryTime) : null,
+  }
+}
+
+/**
+ * Verify Google Play subscription (abstraction - actual implementation requires Google Play API)
+ */
+export async function verifyGooglePlaySubscription(
+  purchaseToken: string,
+  productId: string
+): Promise<GooglePlayPurchase | null> {
+  // This is an abstraction layer - actual implementation would call Google Play Developer API
+  // For now, return mock data structure
+  
+  // In production, you would:
+  // 1. Call Google Play Developer API with the purchase token
+  // 2. Validate the response
+  // 3. Return normalized purchase data
+  
+  console.log('[v0] Google Play verification would happen here for:', { purchaseToken, productId })
+  
+  // Return null to indicate verification not implemented
+  // In production, this would return the actual purchase data
+  return null
+}
+
+/**
+ * Sync subscription from external provider
+ */
+export async function syncSubscription(
+  familyId: string,
+  userId: string,
+  purchase: GooglePlayPurchase
+): Promise<SubscriptionInfo> {
+  const normalized = normalizeSubscriptionStatus(purchase)
+  
+  // Check for existing subscription
+  const existing = await getFamilySubscription(familyId)
+  
+  if (existing) {
+    // Update existing subscription
+    const result = await sql`
+      UPDATE subscriptions
+      SET tier = ${normalized.tier},
+          status = ${normalized.status},
+          current_period_end = ${normalized.periodEnd},
+          external_subscription_id = ${purchase.purchaseToken},
+          cancel_at_period_end = ${!purchase.autoRenewing},
+          updated_at = NOW()
+      WHERE id = ${existing.id}
+      RETURNING id, family_id, tier, status, current_period_start, current_period_end,
+                trial_ends_at, cancel_at_period_end
+    `
+    
+    // Audit log
+    await sql`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_value, new_value)
+      VALUES (
+        ${userId}, 
+        'SUBSCRIPTION_CHANGE', 
+        'subscription',
+        ${existing.id},
+        ${JSON.stringify({ tier: existing.tier })},
+        ${JSON.stringify({ tier: normalized.tier, status: normalized.status })}
+      )
+    `
+    
+    const sub = result[0]
+    return {
+      id: sub.id,
+      familyId: sub.family_id,
+      tier: sub.tier,
+      status: sub.status,
+      currentPeriodStart: sub.current_period_start,
+      currentPeriodEnd: sub.current_period_end,
+      trialEnd: sub.trial_ends_at,
+      cancelAtPeriodEnd: sub.cancel_at_period_end,
+    }
+  } else {
+    // Create new subscription
+    const result = await sql`
+      INSERT INTO subscriptions (family_id, tier, status, current_period_start, current_period_end,
+                                 external_subscription_id, cancel_at_period_end)
+      VALUES (${familyId}, ${normalized.tier}, ${normalized.status}, NOW(), ${normalized.periodEnd},
+              ${purchase.purchaseToken}, ${!purchase.autoRenewing})
+      RETURNING id, family_id, tier, status, current_period_start, current_period_end,
+                trial_ends_at, cancel_at_period_end
+    `
+    
+    // Audit log
+    await sql`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_value)
+      VALUES (
+        ${userId}, 
+        'SUBSCRIPTION_CHANGE', 
+        'subscription',
+        ${result[0].id},
+        ${JSON.stringify({ tier: normalized.tier, status: normalized.status })}
+      )
+    `
+    
+    const sub = result[0]
+    return {
+      id: sub.id,
+      familyId: sub.family_id,
+      tier: sub.tier,
+      status: sub.status,
+      currentPeriodStart: sub.current_period_start,
+      currentPeriodEnd: sub.current_period_end,
+      trialEnd: sub.trial_ends_at,
+      cancelAtPeriodEnd: sub.cancel_at_period_end,
+    }
+  }
+}
+
+/**
+ * Start a free trial
+ */
+export async function startFreeTrial(
+  familyId: string,
+  userId: string,
+  trialDays: number = 30
+): Promise<SubscriptionInfo> {
+  const trialEnd = new Date()
+  trialEnd.setDate(trialEnd.getDate() + trialDays)
+  
+  const result = await sql`
+    INSERT INTO subscriptions (family_id, tier, status, trial_ends_at, current_period_start, current_period_end)
+    VALUES (${familyId}, ${SubscriptionTier.PREMIUM}, ${SubscriptionStatus.TRIALING}, ${trialEnd}, NOW(), ${trialEnd})
+    ON CONFLICT (family_id) DO UPDATE
+    SET tier = ${SubscriptionTier.PREMIUM},
+        status = ${SubscriptionStatus.TRIALING},
+        trial_ends_at = ${trialEnd},
+        current_period_end = ${trialEnd},
+        updated_at = NOW()
+    RETURNING id, family_id, tier, status, current_period_start, current_period_end,
+              trial_ends_at, cancel_at_period_end
+  `
+  
+  // Audit log
+  await sql`
+    INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_value)
+    VALUES (
+      ${userId}, 
+      'SUBSCRIPTION_CHANGE', 
+      'subscription',
+      ${result[0].id},
+      ${JSON.stringify({ action: 'trial_started', trialDays, trialEnd: trialEnd.toISOString() })}
+    )
+  `
+  
+  const sub = result[0]
+  return {
+    id: sub.id,
+    familyId: sub.family_id,
+    tier: sub.tier,
+    status: sub.status,
+    currentPeriodStart: sub.current_period_start,
+    currentPeriodEnd: sub.current_period_end,
+    trialEnd: sub.trial_ends_at,
+    cancelAtPeriodEnd: sub.cancel_at_period_end,
+  }
+}
+
+/**
+ * Get subscription tier display info
+ */
+export function getSubscriptionTierInfo(tier: string) {
+  const tiers = {
+    [SubscriptionTier.FREE]: {
+      name: "Free",
+      description: "Basic family coordination",
+      price: { monthly: 0, annual: 0 },
+      features: [
+        "Up to 2 children",
+        "Shared family calendar",
+        "Basic event notifications",
+        "30 days history",
+        "Email support",
+      ],
+    },
+    [SubscriptionTier.PREMIUM]: {
+      name: "Basic",
+      description: "Enhanced family features",
+      price: { monthly: 2.99, annual: 29.90 },
+      features: [
+        "Up to 5 children",
+        "Advanced reminder settings",
+        "Complex recurring events",
+        "90 days history",
+        "SMS notifications",
+        "Priority support",
+      ],
+    },
+    [SubscriptionTier.PREMIUM_PLUS]: {
+      name: "Premium",
+      description: "Full family safety suite",
+      price: { monthly: 4.99, annual: 49.90 },
+      features: [
+        "Unlimited children",
+        "Real-time location sharing",
+        "Geofence alerts",
+        "1 year history",
+        "Phone alert notifications",
+        "Custom reminder times",
+        "Family activity reports",
+        "24/7 priority support",
+      ],
+    },
+  }
+  
+  return tiers[tier] || tiers[SubscriptionTier.FREE]
+}
