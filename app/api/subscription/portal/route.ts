@@ -21,16 +21,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "familyId required" }, { status: 400 })
     }
 
+    // Ownership lives on families.owner_id, not on a family_members.role
+    // value of "owner" — this app's roles are PARENT/CHILD, and the owner
+    // is just whichever member's user_id matches the family's owner_id
+    // (see app/api/families/route.ts).
     const membership = await sql`
-      SELECT role FROM family_members
-      WHERE family_id = ${familyId} AND user_id = ${user.id}
+      SELECT fm.role, f.owner_id
+      FROM family_members fm
+      JOIN families f ON f.id = fm.family_id
+      WHERE fm.family_id = ${familyId} AND fm.user_id = ${user.id}
     `
 
     if (membership.length === 0) {
       return NextResponse.json({ error: "Not a member of this family" }, { status: 403 })
     }
 
-    if (membership[0].role !== "owner") {
+    if (membership[0].owner_id !== user.id) {
       return NextResponse.json({ error: "Only family owners can manage subscriptions" }, { status: 403 })
     }
 

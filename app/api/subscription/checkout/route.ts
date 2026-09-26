@@ -32,9 +32,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify the user is in the family and is the owner (only owners can
-    // manage billing), mirroring the check the old upgrade route made.
+    // manage billing). Ownership lives on families.owner_id, not on a
+    // family_members.role value of "owner" — this app's roles are
+    // PARENT/CHILD, and the owner is just whichever member's user_id
+    // matches the family's owner_id (see app/api/families/route.ts).
     const membership = await sql`
-      SELECT fm.*, f.name as family_name
+      SELECT fm.*, f.name as family_name, f.owner_id
       FROM family_members fm
       JOIN families f ON f.id = fm.family_id
       WHERE fm.family_id = ${familyId} AND fm.user_id = ${user.id}
@@ -44,7 +47,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Not a member of this family" }, { status: 403 })
     }
 
-    if (membership[0].role !== "owner") {
+    if (membership[0].owner_id !== user.id) {
       return NextResponse.json({ error: "Only family owners can manage subscriptions" }, { status: 403 })
     }
 
