@@ -2,7 +2,7 @@
   "relation": ["delegate_permission/common.handle_all_urls"],
   "target": {
     "namespace": "android_app",
-    "package_name": "com.togethr.app",
+    "package_name": "com.togethrapp.mobile",
     "sha256_cert_fingerprints": [
       "47:0C:74:1D:D3:87:28:27:AC:EE:19:76:D2:8F:9D:23:D6:E7:5C:0C:80:AA:EB:10:E7:C8:7A:33:60:60:0F:87"
     ]
