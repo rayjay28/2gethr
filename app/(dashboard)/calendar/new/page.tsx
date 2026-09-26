@@ -53,7 +53,7 @@ export default function NewEventPage() {
   const searchParams = useSearchParams()
   const dateParam = searchParams.get('date')
   const { user, isLoading: authLoading } = useAuth()
-  const { families } = useFamilies()
+  const { families, isLoading: familiesLoading } = useFamilies()
   
   // Use date from URL param if provided and valid, otherwise use today
   const getInitialDate = (): Date => {
@@ -229,7 +229,7 @@ export default function NewEventPage() {
     }
   }
 
-  if (authLoading) {
+  if (authLoading || familiesLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -731,7 +731,7 @@ export default function NewEventPage() {
               <Button
                 type="submit"
                 className="flex-1 h-12 touch-target"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !formData.familyId}
               >
                 {isSubmitting ? (
                   <>

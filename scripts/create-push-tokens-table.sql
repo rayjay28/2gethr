@@ -9,7 +9,13 @@ CREATE TABLE IF NOT EXISTS push_tokens (
   last_used_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, token)
+  -- token alone must be unique: lib/services/push.ts upserts with
+  -- ON CONFLICT (token), reassigning user_id if the same device token
+  -- shows up under a different account. A composite UNIQUE(user_id, token)
+  -- doesn't satisfy that ON CONFLICT target, so every insert threw
+  -- "no unique or exclusion constraint matching ON CONFLICT" and
+  -- registerPushToken() silently swallowed it and returned false.
+  UNIQUE(token)
 );
 
 -- Create index for faster lookups by user

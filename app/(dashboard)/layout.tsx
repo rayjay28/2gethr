@@ -121,7 +121,10 @@ export default function DashboardLayout({
           <div className="border-t border-sidebar-border p-4">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-sidebar-accent transition-colors">
+                <button
+                  aria-label="Account menu"
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-sidebar-accent transition-colors"
+                >
                   <Avatar className="w-9 h-9 ring-2 ring-sidebar-border">
                     <AvatarImage 
                       src={user?.avatarUrl || undefined} 
@@ -174,6 +177,7 @@ export default function DashboardLayout({
             <Button
               variant="ghost"
               size="icon"
+              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
               className="h-10 w-10 touch-target no-select"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
