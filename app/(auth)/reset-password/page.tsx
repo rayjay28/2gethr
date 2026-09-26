@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,26 @@ import { toast } from 'sonner'
 import { Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react'
 import { LogoIcon } from '@/components/logo'
 
+// Next.js requires any component that calls useSearchParams() to be wrapped
+// in a Suspense boundary, or the page fails to prerender at build time
+// ("useSearchParams() should be wrapped in a suspense boundary"). The actual
+// page logic lives in ResetPasswordForm below; this default export just
+// supplies that boundary.
 export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <Spinner className="w-6 h-6" />
+        </div>
+      }
+    >
+      <ResetPasswordForm />
+    </Suspense>
+  )
+}
+
+function ResetPasswordForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const token = searchParams.get('token') || ''

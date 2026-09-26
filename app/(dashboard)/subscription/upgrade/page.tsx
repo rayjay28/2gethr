@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
@@ -57,7 +57,24 @@ const tiers = {
   }
 }
 
+// Next.js requires any component that calls useSearchParams() to be wrapped
+// in a Suspense boundary, or the page fails to prerender at build time
+// ("useSearchParams() should be wrapped in a suspense boundary").
 export default function UpgradePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Spinner className="h-8 w-8" />
+        </div>
+      }
+    >
+      <UpgradeForm />
+    </Suspense>
+  )
+}
+
+function UpgradeForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const rawTierParam = searchParams.get('tier')?.toUpperCase()

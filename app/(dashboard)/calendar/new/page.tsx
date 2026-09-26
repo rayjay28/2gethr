@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import useSWR, { mutate } from 'swr'
 import { format, addHours } from 'date-fns'
@@ -48,7 +48,24 @@ const REMINDER_OPTIONS = [
   { value: 1440, label: '1 day before' },
 ]
 
+// Next.js requires any component that calls useSearchParams() to be wrapped
+// in a Suspense boundary, or the page fails to prerender at build time
+// ("useSearchParams() should be wrapped in a suspense boundary").
 export default function NewEventPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <NewEventForm />
+    </Suspense>
+  )
+}
+
+function NewEventForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const dateParam = searchParams.get('date')

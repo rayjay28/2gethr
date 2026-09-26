@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,18 @@ import {
   Home
 } from 'lucide-react'
 
+// Next.js requires any component that calls useSearchParams() to be wrapped
+// in a Suspense boundary, or the page fails to prerender at build time
+// ("useSearchParams() should be wrapped in a suspense boundary").
 export default function ConfirmationPage() {
+  return (
+    <Suspense fallback={null}>
+      <ConfirmationContent />
+    </Suspense>
+  )
+}
+
+function ConfirmationContent() {
   const searchParams = useSearchParams()
   const transactionId = searchParams.get('transactionId')
 

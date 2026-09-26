@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, RefreshCw, Trash2, ListTodo } from 'lucide-react'
@@ -29,7 +29,24 @@ function GoogleCalendarIcon({ className }: { className?: string }) {
 
 
 
+// Next.js requires any component that calls useSearchParams() to be wrapped
+// in a Suspense boundary, or the page fails to prerender at build time
+// ("useSearchParams() should be wrapped in a suspense boundary").
 export default function CalendarSyncPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Spinner className="w-8 h-8" />
+        </div>
+      }
+    >
+      <CalendarSyncContent />
+    </Suspense>
+  )
+}
+
+function CalendarSyncContent() {
   const searchParams = useSearchParams()
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
