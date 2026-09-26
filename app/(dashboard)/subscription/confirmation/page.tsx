@@ -5,9 +5,8 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
+import {
   CheckCircle2,
-  Clock,
   ArrowRight,
   Home
 } from 'lucide-react'
@@ -25,7 +24,7 @@ export default function ConfirmationPage() {
 
 function ConfirmationContent() {
   const searchParams = useSearchParams()
-  const transactionId = searchParams.get('transactionId')
+  const sessionId = searchParams.get('session_id')
 
   return (
     <div className="container max-w-2xl py-16">
@@ -34,49 +33,38 @@ function ConfirmationContent() {
           <div className="mx-auto mb-4 p-4 rounded-full bg-green-100 dark:bg-green-900/20">
             <CheckCircle2 className="h-12 w-12 text-green-600" />
           </div>
-          <CardTitle className="text-2xl">Upgrade Request Submitted!</CardTitle>
+          <CardTitle className="text-2xl">Payment Successful!</CardTitle>
           <CardDescription className="text-base">
-            Thank you for choosing Togethr Premium
+            Thank you for upgrading your Togethr plan
           </CardDescription>
         </CardHeader>
-        
-        <CardContent className="space-y-6">
-          <div className="p-4 rounded-lg bg-muted/50 text-left space-y-3">
-            <div className="flex items-center gap-2 text-sm">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">What happens next:</span>
-            </div>
-            <ol className="space-y-2 text-sm ml-6 list-decimal">
-              <li>Our team will review your upgrade request</li>
-              <li>You&apos;ll receive a payment link via email</li>
-              <li>Once payment is confirmed, your premium features will be activated</li>
-              <li>You&apos;ll receive a confirmation email with your receipt</li>
-            </ol>
-          </div>
 
-          {transactionId && (
+        <CardContent className="space-y-6">
+          <p className="text-sm text-muted-foreground">
+            Your subscription is now active. Stripe processed your payment securely, and your
+            new plan&apos;s features are available right away. You&apos;ll get an email receipt
+            from Stripe, and you can manage your billing details (payment method, invoices,
+            cancellation) any time from the Subscription page.
+          </p>
+
+          {sessionId && (
             <div className="p-3 rounded-lg bg-muted/30 text-sm">
-              <span className="text-muted-foreground">Request ID: </span>
-              <code className="font-mono">{transactionId}</code>
+              <span className="text-muted-foreground">Checkout session: </span>
+              <code className="font-mono text-xs">{sessionId}</code>
             </div>
           )}
-
-          <p className="text-sm text-muted-foreground">
-            Processing typically takes 1-2 business days. If you have any questions,
-            please contact our support team.
-          </p>
         </CardContent>
 
         <CardFooter className="flex justify-center gap-4">
           <Button variant="outline" asChild>
-            <Link href="/dashboard">
+            <Link href="/subscription">
               <Home className="h-4 w-4 mr-2" />
-              Go to Dashboard
+              View Subscription
             </Link>
           </Button>
           <Button asChild>
-            <Link href="/support">
-              Contact Support
+            <Link href="/dashboard">
+              Go to Dashboard
               <ArrowRight className="h-4 w-4 ml-2" />
             </Link>
           </Button>
