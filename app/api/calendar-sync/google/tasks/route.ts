@@ -111,10 +111,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Get Google connection with task sync enabled
+    // BUG FIX: the real columns are `access_token_encrypted` /
+    // `refresh_token_encrypted`, and the connection's enabled flag is
+    // `sync_enabled` - there is no `is_active` column on this table (see
+    // scripts/add-calendar-sync-tables.sql). The old names don't exist, so
+    // this query always threw and task sync could never run.
     const connections = await sql`
-      SELECT id, encrypted_access_token, encrypted_refresh_token, sync_tasks
+      SELECT id, access_token_encrypted, refresh_token_encrypted, sync_tasks
       FROM calendar_sync_connections
-      WHERE user_id = ${user.id} AND provider = 'google' AND is_active = true
+      WHERE user_id = ${user.id} AND provider = 'google' AND sync_enabled = true
     `
 
     if (connections.length === 0) {
@@ -134,16 +139,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Decrypt tokens
-    const refreshToken = decrypt(connection.encrypted_refresh_token)
-    let accessToken = decrypt(connection.encrypted_access_token)
+    const refreshToken = decrypt(connection.refresh_token_encrypted)
+    let accessToken = decrypt(connection.access_token_encrypted)
 
     // Refresh token
     const newAccessToken = await refreshAccessToken(refreshToken)
     if (newAccessToken) {
       accessToken = newAccessToken
       await sql`
-        UPDATE calendar_sync_connections 
-        SET encrypted_access_token = ${encrypt(newAccessToken)}
+        UPDATE calendar_sync_connections
+        SET access_token_encrypted = ${encrypt(newAccessToken)}
         WHERE id = ${connection.id}
       `
     }
@@ -172,11 +177,14 @@ export async function POST(request: NextRequest) {
     const familyId = familyMembers[0].family_id
 
     // Get tasks with due dates that haven't been synced or need updating
+    // BUG FIX: synced_tasks' column linking back to tasks is `familyhub_task_id`,
+    // not `task_id` (see scripts/add-synced-tasks-table.sql) - the old name
+    // doesn't exist, so this join always threw and task sync never ran.
     const tasks = await sql`
       SELECT t.id, t.title, t.description, t.due_date, t.status, t.updated_at,
              st.google_task_id, st.last_synced_at
       FROM tasks t
-      LEFT JOIN synced_tasks st ON t.id = st.task_id AND st.connection_id = ${connection.id}
+      LEFT JOIN synced_tasks st ON t.id = st.familyhub_task_id AND st.connection_id = ${connection.id}
       WHERE t.family_id = ${familyId}
       AND t.due_date IS NOT NULL
       AND t.status NOT IN ('ARCHIVED', 'CANCELLED')
@@ -250,11 +258,16 @@ export async function POST(request: NextRequest) {
         }
 
         // Upsert sync record
+        // BUG FIX: the column is `familyhub_task_id`, not `task_id`, and
+        // `google_tasklist_id` is NOT NULL on this table (see
+        // scripts/add-synced-tasks-table.sql) but was never supplied, so
+        // this insert always violated the schema and no task ever got
+        // marked as synced.
         await sql`
-          INSERT INTO synced_tasks (connection_id, task_id, google_task_id, last_synced_at)
-          VALUES (${connection.id}, ${task.id}, ${googleTaskId}, NOW())
-          ON CONFLICT (connection_id, task_id)
-          DO UPDATE SET google_task_id = ${googleTaskId}, last_synced_at = NOW()
+          INSERT INTO synced_tasks (connection_id, familyhub_task_id, google_task_id, google_tasklist_id, last_synced_at)
+          VALUES (${connection.id}, ${task.id}, ${googleTaskId}, ${taskListId}, NOW())
+          ON CONFLICT (connection_id, familyhub_task_id)
+          DO UPDATE SET google_task_id = ${googleTaskId}, google_tasklist_id = ${taskListId}, last_synced_at = NOW()
         `
 
         synced++
@@ -307,9 +320,9 @@ export async function PATCH(request: NextRequest) {
     }
 
     const result = await sql`
-      UPDATE calendar_sync_connections 
+      UPDATE calendar_sync_connections
       SET sync_tasks = ${syncTasks}
-      WHERE user_id = ${user.id} AND provider = 'google' AND is_active = true
+      WHERE user_id = ${user.id} AND provider = 'google' AND sync_enabled = true
       RETURNING id
     `
 

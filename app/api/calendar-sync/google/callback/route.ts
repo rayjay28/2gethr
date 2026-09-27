@@ -55,7 +55,8 @@ export async function GET(request: NextRequest) {
 
     const tokens = await tokenResponse.json()
 
-    // Get user's primary calendar info
+    // Get user's primary calendar info (id is the account's email address for
+    // the "primary" calendar; summary is the human-readable display name)
     const calendarResponse = await fetch(
       'https://www.googleapis.com/calendar/v3/calendars/primary',
       {
@@ -64,13 +65,36 @@ export async function GET(request: NextRequest) {
     )
 
     let externalCalendarId = 'primary'
-    let calendarName = 'Google Calendar'
-    
+    let accountEmail: string | null = null
+
     if (calendarResponse.ok) {
       const calendarData = await calendarResponse.json()
       externalCalendarId = calendarData.id || 'primary'
-      calendarName = calendarData.summary || 'Google Calendar'
+      // For the "primary" calendar, Google's `id` field IS the account email.
+      accountEmail = calendarData.id || null
     }
+
+    // BUG FIX: this route used to write to a `calendar_name` column that was
+    // never part of the schema (see scripts/add-calendar-sync-tables.sql,
+    // which only has `provider_account_email`), and omitted the required
+    // `family_id` column entirely. Both mistakes made every insert/update
+    // here fail outright, so a connection was never actually saved even
+    // after the OAuth round-trip succeeded.
+
+    // Find the user's active family (needed because calendar_sync_connections
+    // has a NOT NULL family_id column tying the connection to a family).
+    const familyMembership = await sql`
+      SELECT family_id FROM family_members
+      WHERE user_id = ${userId} AND is_active = true
+      ORDER BY joined_at ASC
+      LIMIT 1
+    `
+
+    if (familyMembership.length === 0) {
+      return NextResponse.redirect(new URL('/settings/calendar-sync?error=no_family', request.url))
+    }
+
+    const familyId = familyMembership[0].family_id
 
     // Encrypt tokens before storing
     const encryptedAccessToken = encrypt(tokens.access_token)
@@ -81,7 +105,7 @@ export async function GET(request: NextRequest) {
 
     // Check if connection already exists
     const existing = await sql`
-      SELECT id FROM calendar_sync_connections 
+      SELECT id FROM calendar_sync_connections
       WHERE user_id = ${userId} AND provider = 'google'
     `
 
@@ -89,12 +113,13 @@ export async function GET(request: NextRequest) {
       // Update existing connection
       await sql`
         UPDATE calendar_sync_connections
-        SET 
+        SET
           access_token_encrypted = ${encryptedAccessToken},
           refresh_token_encrypted = ${encryptedRefreshToken},
           token_expires_at = ${tokenExpiry.toISOString()},
           external_calendar_id = ${externalCalendarId},
-          calendar_name = ${calendarName},
+          provider_account_email = ${accountEmail},
+          family_id = ${familyId},
           sync_enabled = true,
           updated_at = NOW()
         WHERE user_id = ${userId} AND provider = 'google'
@@ -103,11 +128,11 @@ export async function GET(request: NextRequest) {
       // Create new connection
       await sql`
         INSERT INTO calendar_sync_connections (
-          user_id, provider, external_calendar_id, calendar_name,
+          user_id, family_id, provider, external_calendar_id, provider_account_email,
           access_token_encrypted, refresh_token_encrypted, token_expires_at,
           sync_enabled
         ) VALUES (
-          ${userId}, 'google', ${externalCalendarId}, ${calendarName},
+          ${userId}, ${familyId}, 'google', ${externalCalendarId}, ${accountEmail},
           ${encryptedAccessToken}, ${encryptedRefreshToken}, ${tokenExpiry.toISOString()},
           true
         )

@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
       connections: connections.map(conn => ({
         id: conn.id,
         provider: conn.provider,
-        calendarName: conn.provider_account_email || 'Google Calendar',
+        calendarName: conn.provider_account_email || (conn.provider === 'google' ? 'Google Calendar' : 'Calendar'),
         externalCalendarId: conn.external_calendar_id,
         syncEnabled: conn.sync_enabled,
         syncDirection: conn.sync_direction,
@@ -71,10 +71,35 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
+    // Verify the connection belongs to this user before touching any data
+    // tied to it (previously this ownership check only happened on the final
+    // delete, after other users' data could already have been removed).
+    const owned = await sql`
+      SELECT id FROM calendar_sync_connections
+      WHERE id = ${connectionId} AND user_id = ${user.id}
+    `
+
+    if (owned.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Connection not found' },
+        { status: 404 }
+      )
+    }
+
     // Delete synced events for this connection
+    // BUG FIX: synced_events' foreign key to calendar_sync_connections is
+    // named `connection_id` (see scripts/add-calendar-sync-tables.sql), not
+    // `sync_connection_id` - the old column name here doesn't exist, so this
+    // query always threw and disconnecting a calendar always failed.
     await sql`
       DELETE FROM synced_events
-      WHERE sync_connection_id = ${connectionId}
+      WHERE connection_id = ${connectionId}
+    `
+
+    // Delete synced task mappings for this connection too
+    await sql`
+      DELETE FROM synced_tasks
+      WHERE connection_id = ${connectionId}
     `
 
     // Delete the connection

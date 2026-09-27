@@ -114,13 +114,19 @@ export async function POST(request: NextRequest) {
     }
 
     const familyId = familyMembership[0].family_id
+    // BUG FIX: the sync_direction check constraint on calendar_sync_connections
+    // only allows 'import' | 'export' | 'both' (see
+    // scripts/add-calendar-sync-tables.sql). This code compared against
+    // 'bidirectional', a value that could never actually be stored, so
+    // "Bidirectional" mode silently behaved like "import only" never ran its
+    // export half (and vice versa was never reachable either).
     const syncDirection = connection.sync_direction
 
     let importedCount = 0
     let exportedCount = 0
 
     // Import events from Google Calendar
-    if (syncDirection === 'import' || syncDirection === 'bidirectional') {
+    if (syncDirection === 'import' || syncDirection === 'both') {
       const googleEventsResponse = await fetch(
         `https://www.googleapis.com/calendar/v3/calendars/${connection.external_calendar_id}/events?` +
         new URLSearchParams({
@@ -161,9 +167,12 @@ export async function POST(request: NextRequest) {
           if (!gEvent.id || !gEvent.summary) continue
 
           // Check if already synced
+          // BUG FIX: synced_events' FK column is `connection_id`, not
+          // `sync_connection_id` (that column doesn't exist), so this lookup
+          // always threw and import sync never actually ran.
           const existingSynced = await sql`
             SELECT id FROM synced_events
-            WHERE sync_connection_id = ${connection.id}
+            WHERE connection_id = ${connection.id}
             AND external_event_id = ${gEvent.id}
           `
 
@@ -187,11 +196,15 @@ export async function POST(request: NextRequest) {
             `
 
             // Record the sync mapping
+            // BUG FIX: synced_events has no `sync_direction` column - it has
+            // `sync_status` instead (see scripts/add-calendar-sync-tables.sql).
+            // Writing to a nonexistent column made this insert fail every
+            // time, so no event was ever actually recorded as synced.
             await sql`
               INSERT INTO synced_events (
-                sync_connection_id, local_event_id, external_event_id, sync_direction
+                connection_id, local_event_id, external_event_id, sync_status, last_synced_at
               ) VALUES (
-                ${connection.id}, ${newEvent[0].id}, ${gEvent.id}, 'import'
+                ${connection.id}, ${newEvent[0].id}, ${gEvent.id}, 'synced', NOW()
               )
             `
 
@@ -202,15 +215,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Export events to Google Calendar
-    if (syncDirection === 'export' || syncDirection === 'bidirectional') {
+    if (syncDirection === 'export' || syncDirection === 'both') {
       // Get local events that haven't been exported
       const localEvents = await sql`
-        SELECT e.id, e.title, e.description, e.location, 
+        SELECT e.id, e.title, e.description, e.location,
                e.start_time, e.end_time, e.is_all_day
         FROM events e
         JOIN calendars c ON e.calendar_id = c.id
-        LEFT JOIN synced_events se ON se.local_event_id = e.id 
-          AND se.sync_connection_id = ${connection.id}
+        LEFT JOIN synced_events se ON se.local_event_id = e.id
+          AND se.connection_id = ${connection.id}
         WHERE c.family_id = ${familyId}
         AND e.status != 'CANCELLED'
         AND e.start_time >= NOW()
@@ -248,9 +261,9 @@ export async function POST(request: NextRequest) {
           
           await sql`
             INSERT INTO synced_events (
-              sync_connection_id, local_event_id, external_event_id, sync_direction
+              connection_id, local_event_id, external_event_id, sync_status, last_synced_at
             ) VALUES (
-              ${connection.id}, ${event.id}, ${createdEvent.id}, 'export'
+              ${connection.id}, ${event.id}, ${createdEvent.id}, 'synced', NOW()
             )
           `
 
@@ -260,9 +273,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Update last synced time
+    // BUG FIX: the column on calendar_sync_connections is `last_sync_at`
+    // (see scripts/add-calendar-sync-tables.sql), not `last_synced_at` - the
+    // old name doesn't exist, so this update threw on every sync and the
+    // "Last synced" timestamp shown in Settings never advanced.
     await sql`
       UPDATE calendar_sync_connections
-      SET last_synced_at = NOW(), updated_at = NOW()
+      SET last_sync_at = NOW(), updated_at = NOW()
       WHERE id = ${connection.id}
     `
 

@@ -10,7 +10,7 @@ export interface CalendarSyncConnection {
   calendarName: string
   externalCalendarId: string
   syncEnabled: boolean
-  syncDirection: 'import' | 'export' | 'bidirectional'
+  syncDirection: 'import' | 'export' | 'both'
   syncTasks: boolean
   lastSyncedAt: string | null
   createdAt: string

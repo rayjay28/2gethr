@@ -3,14 +3,17 @@
 import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, Trash2, ListTodo } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Trash2, ListTodo, Calendar, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Input } from '@/components/ui/input'
 import { useCalendarSync } from '@/hooks/use-calendar-sync'
+import { getAccessToken } from '@/hooks/use-auth'
 import { format } from 'date-fns'
+import { toast } from 'sonner'
 
 // Google Calendar icon
 function GoogleCalendarIcon({ className }: { className?: string }) {
@@ -62,6 +65,68 @@ function CalendarSyncContent() {
 
   const [taskSyncEnabled, setTaskSyncEnabled] = useState(false)
   const [isTogglingTaskSync, setIsTogglingTaskSync] = useState(false)
+
+  // Subscription link for Apple Calendar, Outlook, and any other app that
+  // can subscribe to a calendar via URL (rather than a Google-style OAuth
+  // integration built per-provider).
+  const [icalFeedUrl, setIcalFeedUrl] = useState<string | null>(null)
+  const [icalLoading, setIcalLoading] = useState(true)
+  const [icalGenerating, setIcalGenerating] = useState(false)
+  const [icalCopied, setIcalCopied] = useState(false)
+
+  useEffect(() => {
+    const loadIcalFeed = async () => {
+      try {
+        const token = getAccessToken()
+        const res = await fetch('/api/calendar-sync/ical/generate', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+        const data = await res.json()
+        if (data.success) {
+          setIcalFeedUrl(data.feedUrl)
+        }
+      } catch {
+        // Leave feed unset if this fails; the button below just offers to generate one
+      } finally {
+        setIcalLoading(false)
+      }
+    }
+    loadIcalFeed()
+  }, [])
+
+  const handleGenerateIcalFeed = async () => {
+    setIcalGenerating(true)
+    try {
+      const token = getAccessToken()
+      const res = await fetch('/api/calendar-sync/ical/generate', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      const data = await res.json()
+      if (data.success) {
+        setIcalFeedUrl(data.feedUrl)
+        toast.success('Subscription link created')
+      } else {
+        toast.error(data.error || 'Failed to create subscription link')
+      }
+    } catch {
+      toast.error('Failed to create subscription link')
+    } finally {
+      setIcalGenerating(false)
+    }
+  }
+
+  const handleCopyIcalFeed = async () => {
+    if (!icalFeedUrl) return
+    try {
+      await navigator.clipboard.writeText(icalFeedUrl)
+      setIcalCopied(true)
+      toast.success('Link copied')
+      setTimeout(() => setIcalCopied(false), 2000)
+    } catch {
+      toast.error('Failed to copy link')
+    }
+  }
 
   // Initialize task sync state from connection
   useEffect(() => {
@@ -131,6 +196,7 @@ function CalendarSyncContent() {
         invalid_state: 'Invalid authentication state',
         token_exchange: 'Failed to exchange token',
         callback_failed: 'Callback processing failed',
+        no_family: 'You need to be part of a family before connecting a calendar',
       }
       setStatusMessage({ type: 'error', message: errorMessages[error] || 'Connection failed' })
     }
@@ -295,7 +361,7 @@ function CalendarSyncContent() {
                     <SelectContent>
                       <SelectItem value="import">Import only</SelectItem>
                       <SelectItem value="export">Export only</SelectItem>
-                      <SelectItem value="bidirectional">Bidirectional</SelectItem>
+                      <SelectItem value="both">Bidirectional</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -343,6 +409,63 @@ function CalendarSyncContent() {
         </CardContent>
       </Card>
 
+      {/* Other Calendars (Apple, Outlook, and any app that supports calendar subscription URLs) */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Calendar className="w-8 h-8 text-muted-foreground" />
+            <div>
+              <CardTitle className="text-lg">Other Calendars</CardTitle>
+              <CardDescription>
+                Subscribe from Apple Calendar, Outlook, or any app that supports calendar subscription links
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {icalLoading ? (
+            <div className="flex justify-center py-4">
+              <Spinner className="w-5 h-5" />
+            </div>
+          ) : icalFeedUrl ? (
+            <>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Input readOnly value={icalFeedUrl} className="flex-1 font-mono text-xs" />
+                <Button variant="outline" size="sm" onClick={handleCopyIcalFeed} className="shrink-0">
+                  {icalCopied ? (
+                    <Check className="w-4 h-4 mr-2" />
+                  ) : (
+                    <Copy className="w-4 h-4 mr-2" />
+                  )}
+                  {icalCopied ? 'Copied' : 'Copy link'}
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                In Apple Calendar: File → New Calendar Subscription, and paste this link.
+                In Outlook: Add calendar → Subscribe from web, and paste this link.
+                Most apps refresh a subscribed calendar every 15-60 minutes; this is a
+                one-way feed (Togethr events flow out - it doesn&apos;t import events back).
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGenerateIcalFeed}
+                disabled={icalGenerating}
+                className="text-muted-foreground"
+              >
+                {icalGenerating ? <Spinner className="w-4 h-4 mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                Regenerate link (invalidates the old one)
+              </Button>
+            </>
+          ) : (
+            <Button onClick={handleGenerateIcalFeed} disabled={icalGenerating} className="w-full sm:w-auto">
+              {icalGenerating ? <Spinner className="w-4 h-4 mr-2" /> : <Calendar className="w-4 h-4 mr-2" />}
+              Create subscription link
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Info Card */}
       <Card className="bg-muted/30">
         <CardContent className="pt-6">
@@ -350,6 +473,7 @@ function CalendarSyncContent() {
           <ul className="text-sm text-muted-foreground space-y-2">
             <li>• <strong>Google Calendar:</strong> Full bidirectional sync - events flow both ways automatically</li>
             <li>• <strong>Google Tasks:</strong> Tasks with due dates sync to Google Tasks app and appear as reminders on Android</li>
+            <li>• <strong>Other Calendars:</strong> Apple Calendar, Outlook, and any app that supports calendar subscription links can subscribe to a one-way feed of your Togethr events</li>
             <li>• Sync runs automatically every 15 minutes when enabled</li>
             <li>• Your calendar credentials are encrypted and stored securely</li>
           </ul>
