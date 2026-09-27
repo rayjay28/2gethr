@@ -83,10 +83,10 @@ export async function GET(request: Request) {
 
     // Check for registered push subscriptions
     const subscriptions = await sql`
-      SELECT ps.*, u.email, u.first_name
-      FROM push_subscriptions ps
-      JOIN users u ON ps.user_id::text = u.id
-      WHERE ps.is_active = true
+      SELECT pt.*, u.email, u.first_name
+      FROM push_tokens pt
+      JOIN users u ON pt.user_id = u.id
+      WHERE pt.is_active = true
       LIMIT 5
     `
 
@@ -144,17 +144,17 @@ export async function POST(request: Request) {
     // Get active push subscriptions, optionally filtered by email
     const subscriptions = targetEmails.length > 0
       ? await sql`
-          SELECT ps.*, u.email, u.first_name
-          FROM push_subscriptions ps
-          JOIN users u ON ps.user_id::text = u.id::text
-          WHERE ps.is_active = true
+          SELECT pt.*, u.email, u.first_name
+          FROM push_tokens pt
+          JOIN users u ON pt.user_id = u.id
+          WHERE pt.is_active = true
           AND u.email = ANY(${targetEmails}::text[])
         `
       : await sql`
-          SELECT ps.*, u.email, u.first_name
-          FROM push_subscriptions ps
-          JOIN users u ON ps.user_id::text = u.id::text
-          WHERE ps.is_active = true
+          SELECT pt.*, u.email, u.first_name
+          FROM push_tokens pt
+          JOIN users u ON pt.user_id = u.id
+          WHERE pt.is_active = true
         `
 
     if (subscriptions.length === 0) {
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
       try {
         // Send test notification
         const message = {
-          token: sub.fcm_token || sub.token,
+          token: sub.token,
           notification: {
             title: 'Togethr Test Notification',
             body: `Hello ${sub.first_name || 'there'}! Push notifications are working correctly.`,
