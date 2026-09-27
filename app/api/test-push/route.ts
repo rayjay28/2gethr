@@ -85,7 +85,7 @@ export async function GET(request: Request) {
     const subscriptions = await sql`
       SELECT ps.*, u.email, u.first_name
       FROM push_subscriptions ps
-      JOIN users u ON ps.user_id = u.id
+      JOIN users u ON ps.user_id::text = u.id
       WHERE ps.is_active = true
       LIMIT 5
     `
