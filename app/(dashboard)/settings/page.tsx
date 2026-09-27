@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { useAuth, getAccessToken } from '@/hooks/use-auth'
+import { useRouter } from 'next/navigation'
+import { useAuth, getAccessToken, clearTokens } from '@/hooks/use-auth'
 import { useFamilies } from '@/hooks/use-family'
 import { useSubscription } from '@/hooks/use-subscription'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,7 @@ import {
 
 export default function SettingsPage() {
   const { user, mutate } = useAuth()
+  const router = useRouter()
   const { families } = useFamilies()
   const primaryFamily = families[0] || null
   const { access } = useSubscription(primaryFamily?.id || null)
@@ -77,6 +79,9 @@ export default function SettingsPage() {
   const [resetting, setResetting] = useState(false)
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [resetConfirmEmail, setResetConfirmEmail] = useState('')
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('')
+  const [deleting, setDeleting] = useState(false)
   
   // Load notification settings from database
   useEffect(() => {
@@ -330,6 +335,43 @@ export default function SettingsPage() {
       toast.error(error instanceof Error ? error.message : 'Failed to reset account')
     } finally {
       setResetting(false)
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmEmail !== user?.email) {
+      toast.error('Email does not match your account email')
+      return
+    }
+
+    setDeleting(true)
+    try {
+      const token = getAccessToken()
+      const res = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ confirmEmail: deleteConfirmEmail }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to delete account')
+      }
+
+      toast.success('Your account has been deleted.')
+      // Clear the client-side tokens (the API call already cleared the
+      // server-side auth cookies) and send the person to login - there's
+      // no account left to come back to.
+      clearTokens()
+      setShowDeleteDialog(false)
+      router.push('/login')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete account')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -777,13 +819,54 @@ export default function SettingsPage() {
                 <Label className="text-destructive">Delete Account</Label>
                 <p className="text-sm text-muted-foreground">Permanently delete your account and all data</p>
               </div>
-              <Button variant="destructive">
+              <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete Account
               </Button>
             </div>
           </CardContent>
         </Card>
+
+        {/* Delete Account Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="text-destructive">Delete Account</DialogTitle>
+              <DialogDescription>
+                This permanently deletes your account. Your profile, contact info, notifications,
+                location history, and favorites are erased, you&apos;ll be removed from every family,
+                and any subscription you own with no other members will be cancelled. This cannot
+                be undone and you will not be able to log back in with this email.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <p className="text-sm font-medium">
+                To confirm, please type your email address: <span className="text-muted-foreground">{user?.email}</span>
+              </p>
+              <Input
+                placeholder="Enter your email to confirm"
+                value={deleteConfirmEmail}
+                onChange={(e) => setDeleteConfirmEmail(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setShowDeleteDialog(false)
+                setDeleteConfirmEmail('')
+              }}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteAccount}
+                disabled={deleting || deleteConfirmEmail !== user?.email}
+              >
+                {deleting ? <Spinner className="w-4 h-4 mr-2" /> : null}
+                Permanently Delete Account
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Reset Account Dialog */}
         <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
