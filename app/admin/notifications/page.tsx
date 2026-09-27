@@ -613,6 +613,7 @@ export default function AdminNotificationsPage() {
                             },
                             body: JSON.stringify({ 
             emails: ['ray.jacquet@yahoo.com', 'maximjacquet11@gmail.com', 'info@nexuscmm.com'] })
+                          })
                           const data = await res.json()
                           if (data.success) {
                             setTargetedPushResults(data.results)
