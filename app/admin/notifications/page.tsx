@@ -604,12 +604,15 @@ export default function AdminNotificationsPage() {
                         setSendingTargetedPush(true)
                         setTargetedPushResults(null)
                         try {
+                          const token = getAdminAccessToken()
                           const res = await fetch('/api/test-push', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              emails: ['ray.jacquet@yahoo.com', 'maximjacquet11@gmail.com']
-                            })
+                            headers: {
+                              'Content-Type': 'application/json',
+                              Authorization: `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ 
+                              emails: ['ray.jacquet@yahoo.com', 'maximjacquet11@gmail.com']                            })
                           })
                           const data = await res.json()
                           if (data.success) {
