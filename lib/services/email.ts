@@ -38,8 +38,11 @@ export async function sendEmail(payload: EmailPayload): Promise<EmailResult> {
   }
 
   const apiKey = process.env.RESEND_API_KEY!
-  // Always use the verified domain - nexusifm.com
-  const verifiedFrom = 'Togethr <noreply@nexusifm.com>'
+  // Sender domain must be verified in Resend before emails will actually
+  // send. Reads EMAIL_FROM if set (see docstring above), otherwise falls
+  // back to the user's real domain, nexuscmm.com (this used to be hardcoded
+  // to nexusifm.com, a domain that was never verified in Resend at all).
+  const verifiedFrom = process.env.EMAIL_FROM || 'Togethr <noreply@nexuscmm.com>'
 
   try {
     const response = await fetch('https://api.resend.com/emails', {
