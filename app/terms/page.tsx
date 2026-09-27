@@ -124,8 +124,8 @@ export default function TermsPage() {
             <h2 className="text-xl font-semibold">10. Contact Us</h2>
             <p>
               If you have questions about these Terms, please contact us at{' '}
-              <a href="mailto:info@nexusifm.com" className="text-primary hover:underline">
-                info@nexusifm.com
+              <a href="mailto:info@nexuscmm.com" className="text-primary hover:underline">
+                info@nexuscmm.com
               </a>
             </p>
           </section>

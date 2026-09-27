@@ -52,7 +52,7 @@ export async function GET(
              END as sender_name,
              CASE 
                WHEN m.sender_type = 'USER' THEN ${userEmail}
-               WHEN m.sender_type = 'ADMIN' THEN 'info@nexusifm.com'
+               WHEN m.sender_type = 'ADMIN' THEN 'info@nexuscmm.com'
                ELSE NULL
              END as sender_email
       FROM support_ticket_messages m

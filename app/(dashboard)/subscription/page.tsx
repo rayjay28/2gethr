@@ -441,7 +441,7 @@ export default function SubscriptionPage() {
           </div>
           <Button 
             variant="outline" 
-            onClick={() => window.open('mailto:info@nexusifm.com', '_blank')}
+            onClick={() => window.open('mailto:info@nexuscmm.com', '_blank')}
           >
             Contact Support
           </Button>

@@ -403,7 +403,7 @@ export default function AdminNotificationsPage() {
                   <Check className="w-4 h-4 text-green-600" />
                   <AlertTitle className="text-green-800">Email Configured</AlertTitle>
                   <AlertDescription className="text-green-700">
-                    Resend API key is configured and your domain (nexusifm.com) is verified.
+                    Resend API key is configured and your domain (nexuscmm.com) is verified.
                   </AlertDescription>
                 </Alert>
               ) : (
