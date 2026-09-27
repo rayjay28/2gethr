@@ -47,6 +47,27 @@ export async function POST(
     const body = await request.json()
     const { tier, billingPeriod } = updateSubscriptionSchema.parse(body)
 
+    // SECURITY: this endpoint used to grant ANY tier — including paid ones —
+    // directly in the database with no payment at all ("simulate subscription
+    // change without Stripe"). That meant any authenticated family owner could
+    // grant themselves PREMIUM_PLUS for free by calling this route directly.
+    // Paid tier changes must go through Stripe now: see
+    // POST /api/subscription/checkout (new paid tier) and the Stripe webhook
+    // (/api/webhooks/stripe) which is what actually updates `tier` in the DB
+    // once payment succeeds. This route now only allows moving to FREE
+    // (a no-payment downgrade/cancellation-adjacent action); anything else
+    // must be rejected here rather than silently granted.
+    if (tier !== "FREE") {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Paid tier changes must go through Stripe Checkout. Use POST /api/subscription/checkout instead.",
+        },
+        { status: 400 }
+      )
+    }
+
     // Get current subscription
     const currentSubs = await sql`
       SELECT id, tier, status FROM subscriptions 

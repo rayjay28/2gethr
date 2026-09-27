@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
 import { useFamilies } from '@/hooks/use-family'
 import { useSubscription, useSubscriptionTiers } from '@/hooks/use-subscription'
+import { getAccessToken } from '@/hooks/use-events'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -57,36 +58,41 @@ export default function SubscriptionPage() {
     return tierDisplayNames[tier.toUpperCase()] || tier
   }
 
-  const handleStartTrial = async () => {
+  const handleStartTrial = async (tier: 'PREMIUM' | 'PREMIUM_PLUS') => {
     setIsStartingTrial(true)
-    const result = await startTrial()
+    const result = await startTrial(tier)
     setIsStartingTrial(false)
-    
+
     if (result.success) {
-      toast.success('Premium trial started! Enjoy 14 days of premium features.')
+      toast.success('Trial started! Enjoy 30 days of premium features.')
     } else {
       toast.error(result.error || 'Failed to start trial')
     }
   }
 
-  const handleCancelSubscription = async () => {
-    if (!confirm('Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your billing period. A cancellation ticket will be created for our admin team to process.')) {
-      return
-    }
-    
+  const handleManageBilling = async () => {
+    if (!primaryFamily?.id) return
     setIsCanceling(true)
-    const result = await cancelSubscription()
-    setIsCanceling(false)
-    
-    if (result.success) {
-      const ticketNumber = result.data?.ticketNumber
-      toast.success(
-        ticketNumber 
-          ? `Cancellation request submitted! Ticket #${ticketNumber} created for processing.`
-          : 'Subscription cancellation request submitted'
-      )
-    } else {
-      toast.error(result.error || 'Failed to cancel subscription')
+    try {
+      const token = getAccessToken()
+      const res = await fetch('/api/subscription/portal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ familyId: primaryFamily.id }),
+      })
+      const data = await res.json()
+      if (res.ok && data.url) {
+        window.location.href = data.url
+      } else {
+        toast.error(data.error || 'Failed to open billing portal')
+        setIsCanceling(false)
+      }
+    } catch {
+      toast.error('Something went wrong opening the billing portal')
+      setIsCanceling(false)
     }
   }
 
@@ -192,14 +198,14 @@ export default function SubscriptionPage() {
         </CardContent>
         {access.hasPremium && !isTrialing && (
           <CardFooter>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
-              onClick={handleCancelSubscription}
+              onClick={handleManageBilling}
               disabled={isCanceling}
             >
-              {isCanceling ? <Spinner className="h-4 w-4 mr-2" /> : null}
-              Cancel Subscription
+              {isCanceling ? <Spinner className="h-4 w-4 mr-2" /> : <CreditCard className="h-4 w-4 mr-2" />}
+              Manage Billing
             </Button>
           </CardFooter>
         )}
@@ -318,7 +324,7 @@ export default function SubscriptionPage() {
                       variant="outline"
                       onClick={(e) => {
                         e.stopPropagation()
-                        handleStartTrial()
+                        handleStartTrial(tierKey as 'PREMIUM' | 'PREMIUM_PLUS')
                       }}
                       disabled={isStartingTrial}
                     >

@@ -246,7 +246,7 @@ export function useSubscriptionTiers(): SubscriptionTierInfo[] {
     {
       name: 'Basic',
       description: 'Enhanced family features',
-      price: { monthly: 2.99, annual: 29.90 },
+      price: { monthly: 3.99, annual: 39.90 },
       features: [
         'Up to 5 children',
         'Advanced reminder settings',
@@ -259,7 +259,7 @@ export function useSubscriptionTiers(): SubscriptionTierInfo[] {
     {
       name: 'Premium',
       description: 'Full family safety suite',
-      price: { monthly: 4.99, annual: 49.90 },
+      price: { monthly: 7.99, annual: 79.90 },
       features: [
         'Unlimited children',
         'Real-time location sharing',
