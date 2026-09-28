@@ -116,7 +116,8 @@ const fetcher = async (url: string) => {
 }
 
 export function useAuth(): AuthState & {
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; requiresTwoFactor?: boolean; challengeToken?: string }>
+  verifyTwoFactor: (challengeToken: string, code: string) => Promise<{ success: boolean; error?: string }>
   register: (data: { email: string; password: string; displayName?: string }) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
   updateProfile: (data: Partial<User>) => Promise<{ success: boolean; error?: string }>
@@ -148,18 +149,51 @@ export function useAuth(): AuthState & {
       })
       
       const data = await res.json()
-      
+
       if (!res.ok) {
   return { success: false, error: data.error || 'Login failed' }
   }
-  
+
+  // Password was correct, but the account has 2FA enabled — no session
+  // tokens are issued yet. The caller (login page) should prompt for a
+  // code and call verifyTwoFactor() with this challengeToken.
+  if (data.data?.requiresTwoFactor) {
+    return { success: true, requiresTwoFactor: true, challengeToken: data.data.challengeToken }
+  }
+
   // Store tokens from response
   if (data.data?.tokens?.accessToken) {
     const refreshToken = data.data.tokens.refreshToken || data.data.tokens.accessToken
     setTokens(data.data.tokens.accessToken, refreshToken)
   }
-  
+
   // Force SWR to refetch
+      await mutate(undefined, { revalidate: true })
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: 'Network error' }
+    }
+  }, [mutate])
+
+  const verifyTwoFactor = useCallback(async (challengeToken: string, code: string) => {
+    try {
+      const res = await fetch('/api/auth/2fa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challengeToken, code }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Verification failed' }
+      }
+
+      if (data.data?.tokens?.accessToken) {
+        const refreshToken = data.data.tokens.refreshToken || data.data.tokens.accessToken
+        setTokens(data.data.tokens.accessToken, refreshToken)
+      }
+
       await mutate(undefined, { revalidate: true })
       return { success: true }
     } catch (err) {
@@ -252,6 +286,7 @@ export function useAuth(): AuthState & {
     isAuthenticated: !!data?.user,
     error: error || null,
     login,
+    verifyTwoFactor,
     register,
     logout,
     updateProfile,
