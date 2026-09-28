@@ -54,6 +54,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Subject, description, and category are required' }, { status: 400 })
     }
 
+    // The support_tickets.priority column has a CHECK constraint allowing
+    // only LOW/NORMAL/HIGH/URGENT, but the "new ticket" form (and this
+    // route's own default) sends "MEDIUM" — every ticket submission at the
+    // default priority was failing with a 500 (NeonDbError: violates check
+    // constraint "support_tickets_priority_check"). Normalize here so any
+    // caller using either convention still resolves to an allowed value.
+    const PRIORITY_ALIASES: Record<string, string> = { MEDIUM: 'NORMAL' }
+    const ALLOWED_PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT']
+    const requestedPriority = String(priority).toUpperCase()
+    const normalizedPriority =
+      PRIORITY_ALIASES[requestedPriority] ??
+      (ALLOWED_PRIORITIES.includes(requestedPriority) ? requestedPriority : 'NORMAL')
+
     // Generate ticket number
     const ticketNumber = `TKT-${Date.now().toString(36).toUpperCase()}-${nanoid(4).toUpperCase()}`
 
@@ -63,8 +76,8 @@ export async function POST(request: NextRequest) {
         category, priority, status, created_at, updated_at
       ) VALUES (
         gen_random_uuid(), ${ticketNumber}, ${user.id}, ${familyId || null}, 
-        ${subject}, ${description}, ${category.toUpperCase()}, 
-        ${priority.toUpperCase()}, 'OPEN', NOW(), NOW()
+        ${subject}, ${description}, ${category.toUpperCase()},
+        ${normalizedPriority}, 'OPEN', NOW(), NOW()
       )
       RETURNING *
     `
