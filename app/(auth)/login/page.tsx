@@ -15,13 +15,17 @@ import { LogoIcon } from '@/components/logo'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { login } = useAuth()
+  const { login, verifyTwoFactor } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   })
+  // Set once the password step succeeds but the account has 2FA enabled;
+  // presence of a challenge token is what switches the form to the code step.
+  const [challengeToken, setChallengeToken] = useState<string | null>(null)
+  const [twoFactorCode, setTwoFactorCode] = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,7 +33,9 @@ export default function LoginPage() {
 
     const result = await login(formData.email, formData.password)
 
-    if (result.success) {
+    if (result.success && result.requiresTwoFactor && result.challengeToken) {
+      setChallengeToken(result.challengeToken)
+    } else if (result.success) {
       toast.success('Welcome back!')
       // Navigate to dashboard - auth state is stored in localStorage
       router.push('/dashboard')
@@ -38,6 +44,77 @@ export default function LoginPage() {
     }
 
     setIsLoading(false)
+  }
+
+  const handleTwoFactorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!challengeToken) return
+    setIsLoading(true)
+
+    const result = await verifyTwoFactor(challengeToken, twoFactorCode.trim())
+
+    if (result.success) {
+      toast.success('Welcome back!')
+      router.push('/dashboard')
+    } else {
+      toast.error(result.error || 'Invalid code')
+    }
+
+    setIsLoading(false)
+  }
+
+  if (challengeToken) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-4 bg-background">
+        <div className="w-full max-w-md">
+          <div className="flex flex-col items-center gap-3 mb-8">
+            <LogoIcon size="lg" />
+            <div className="text-center">
+              <h1 className="text-2xl font-bold text-foreground">Togethr</h1>
+              <p className="text-sm text-muted-foreground">Family coordination made simple</p>
+            </div>
+          </div>
+
+          <Card className="border-border/50 shadow-lg">
+            <CardHeader className="text-center">
+              <CardTitle className="text-xl">Two-factor authentication</CardTitle>
+              <CardDescription>Enter the 6-digit code from your authenticator app, or a backup code</CardDescription>
+            </CardHeader>
+            <form onSubmit={handleTwoFactorSubmit}>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="twoFactorCode">Code</Label>
+                  <Input
+                    id="twoFactorCode"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="123456"
+                    value={twoFactorCode}
+                    onChange={(e) => setTwoFactorCode(e.target.value)}
+                    required
+                    autoComplete="one-time-code"
+                    autoFocus
+                    className="h-11 text-center text-lg tracking-widest"
+                  />
+                </div>
+              </CardContent>
+              <CardFooter className="flex flex-col gap-4">
+                <Button type="submit" className="w-full h-11" disabled={isLoading}>
+                  {isLoading ? <Spinner className="w-4 h-4" /> : 'Verify'}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => { setChallengeToken(null); setTwoFactorCode('') }}
+                  className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  Back to sign in
+                </button>
+              </CardFooter>
+            </form>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
