@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 import { nanoid } from 'nanoid'
+import { notifyAdmin, EMAIL_TEMPLATES } from '@/lib/services/email'
 
 // GET - List user's support tickets
 export async function GET(request: NextRequest) {
@@ -76,6 +77,17 @@ export async function POST(request: NextRequest) {
         gen_random_uuid(), ${ticket[0].id}, 'USER', ${description}, false, NOW()
       )
     `
+
+    // Notify admin of the new ticket. Awaited so it can't be cut off by the
+    // serverless runtime returning before it completes; notifyAdmin() never
+    // throws, so a failed/slow email can't fail ticket creation itself.
+    const ticketNotice = EMAIL_TEMPLATES.ADMIN_NEW_TICKET(
+      ticket[0].ticket_number,
+      user.email,
+      subject,
+      description
+    )
+    await notifyAdmin(ticketNotice.subject, ticketNotice.html, ticketNotice.text)
 
     return NextResponse.json({ data: ticket[0] }, { status: 201 })
   } catch (error) {
