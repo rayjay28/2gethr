@@ -3,6 +3,7 @@ import { sql } from "@/lib/db"
 import {
   verifyPassword,
   generateTokenPair,
+  generateTwoFactorChallengeToken,
   getUserWithFamily,
   logAuditEvent,
 } from "@/lib/auth"
@@ -20,8 +21,8 @@ export async function POST(request: NextRequest) {
 
     // Get user by email
     const users = await sql`
-      SELECT id, password_hash, is_active
-      FROM users 
+      SELECT id, password_hash, is_active, two_factor_enabled
+      FROM users
       WHERE email = ${email.toLowerCase()}
     `
 
@@ -51,9 +52,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // If the user has 2FA enabled, don't issue real session tokens yet —
+    // password alone is not enough to log in. Hand back a short-lived
+    // challenge token instead; the client submits it plus a TOTP/backup
+    // code to /api/auth/2fa/verify to actually complete the login.
+    if (user.two_factor_enabled) {
+      const challengeToken = await generateTwoFactorChallengeToken(user.id)
+      return NextResponse.json({
+        success: true,
+        data: { requiresTwoFactor: true, challengeToken },
+        message: "Two-factor authentication required",
+      })
+    }
+
     // Update last login
     await sql`
-      UPDATE users 
+      UPDATE users
       SET last_login_at = NOW(), updated_at = NOW()
       WHERE id = ${user.id}
     `
