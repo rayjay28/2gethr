@@ -7,6 +7,7 @@ import { format, addHours } from 'date-fns'
 import { Calendar as CalendarIcon, Clock, MapPin, Users, Tag, Eye, ArrowLeft, Loader2, Check, X, Bell, Star } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { localDateTimeToISO, localStartOfDayToISO, localEndOfDayToISO } from '@/lib/datetime'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -191,13 +192,17 @@ function NewEventForm() {
     setIsSubmitting(true)
     
     try {
-      const startTime = allDay 
-        ? `${formData.startDate}T00:00:00`
-        : `${formData.startDate}T${formData.startTime}:00`
-      
+      // Build a correct, timezone-aware UTC instant from the local date/time
+      // inputs (see lib/datetime.ts) instead of concatenating strings with
+      // no offset, which used to get silently mis-saved by the TIMESTAMPTZ
+      // column as if the local time were already UTC.
+      const startTime = allDay
+        ? localStartOfDayToISO(formData.startDate)
+        : localDateTimeToISO(formData.startDate, formData.startTime)
+
       const endTime = allDay
-        ? `${formData.endDate}T23:59:59`
-        : `${formData.endDate}T${formData.endTime}:00`
+        ? localEndOfDayToISO(formData.endDate)
+        : localDateTimeToISO(formData.endDate, formData.endTime)
       
       const token = getAccessToken()
       
