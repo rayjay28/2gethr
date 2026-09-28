@@ -85,6 +85,29 @@ export async function sendEmail(payload: EmailPayload): Promise<EmailResult> {
 }
 
 /**
+ * The address that receives operational alerts about the business itself
+ * (new signups, support tickets, cancellations, tier changes) — distinct
+ * from any user-facing email, which always goes to that user's own address.
+ */
+export const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'rjacquet01@gmail.com'
+
+/**
+ * Send an operational alert to the admin address. Failures are logged but
+ * never thrown — a notification going out is never allowed to fail the
+ * user-facing request (signup, ticket submission, etc.) that triggered it.
+ */
+export async function notifyAdmin(subject: string, html: string, text?: string): Promise<void> {
+  try {
+    const result = await sendEmail({ to: ADMIN_EMAIL, subject, html, text })
+    if (!result.success) {
+      console.error('[admin-notify] failed to send:', subject, result.error)
+    }
+  } catch (error) {
+    console.error('[admin-notify] threw while sending:', subject, error)
+  }
+}
+
+/**
  * Send email to multiple recipients
  */
 export async function sendBulkEmail(
@@ -410,5 +433,64 @@ export const EMAIL_TEMPLATES = {
       </html>
     `,
     text: `Weekly Summary for ${familyName} (${weekStart} - ${weekEnd})\n\nHi ${userName},\n\nTasks: ${tasks.completed} completed, ${tasks.pending} pending, ${tasks.overdue} overdue\n\nUpcoming Events: ${events.length}\n${events.slice(0, 5).map(e => `- ${e.title} (${new Date(e.start_time).toLocaleDateString()})`).join('\n')}\n\nView dashboard: ${process.env.NEXT_PUBLIC_APP_URL || 'https://togethr.app'}/dashboard`,
+  }),
+
+  // --- Admin operational alerts ---------------------------------------
+  // These four go to notifyAdmin()/ADMIN_EMAIL, never to a regular user.
+
+  ADMIN_NEW_SIGNUP: (userEmail: string, userName: string) => ({
+    subject: `New signup: ${userEmail}`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px;">
+        <h2 style="color: #0d9488;">New user signup</h2>
+        <p><strong>Name:</strong> ${userName}</p>
+        <p><strong>Email:</strong> ${userEmail}</p>
+        <p><strong>When:</strong> ${new Date().toISOString()}</p>
+      </div>
+    `,
+    text: `New user signup: ${userName} <${userEmail}> at ${new Date().toISOString()}`,
+  }),
+
+  ADMIN_NEW_TICKET: (ticketId: string, userEmail: string, subject: string, message: string) => ({
+    subject: `New support ticket: ${subject}`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px;">
+        <h2 style="color: #0d9488;">New support ticket</h2>
+        <p><strong>Ticket ID:</strong> ${ticketId}</p>
+        <p><strong>From:</strong> ${userEmail}</p>
+        <p><strong>Subject:</strong> ${subject}</p>
+        <p style="white-space: pre-wrap; background:#f9fafb; border-radius:8px; padding:12px;">${message}</p>
+      </div>
+    `,
+    text: `New support ticket ${ticketId} from ${userEmail}\nSubject: ${subject}\n\n${message}`,
+  }),
+
+  ADMIN_SUBSCRIPTION_CANCELLED: (userEmail: string, familyName: string, previousTier: string) => ({
+    subject: `Subscription cancelled: ${familyName}`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px;">
+        <h2 style="color: #ef4444;">Subscription cancelled</h2>
+        <p><strong>Family:</strong> ${familyName}</p>
+        <p><strong>Owner email:</strong> ${userEmail}</p>
+        <p><strong>Previous tier:</strong> ${previousTier}</p>
+        <p><strong>When:</strong> ${new Date().toISOString()}</p>
+      </div>
+    `,
+    text: `Subscription cancelled for ${familyName} (${userEmail}). Previous tier: ${previousTier}.`,
+  }),
+
+  ADMIN_TIER_CHANGED: (userEmail: string, familyName: string, previousTier: string, newTier: string) => ({
+    subject: `Tier changed: ${familyName} (${previousTier} -> ${newTier})`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px;">
+        <h2 style="color: #0d9488;">Subscription tier changed</h2>
+        <p><strong>Family:</strong> ${familyName}</p>
+        <p><strong>Owner email:</strong> ${userEmail}</p>
+        <p><strong>Previous tier:</strong> ${previousTier}</p>
+        <p><strong>New tier:</strong> ${newTier}</p>
+        <p><strong>When:</strong> ${new Date().toISOString()}</p>
+      </div>
+    `,
+    text: `Tier changed for ${familyName} (${userEmail}): ${previousTier} -> ${newTier}.`,
   }),
 }
