@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { TwoFactorSettings } from '@/components/two-factor-settings'
 import { toast } from 'sonner'
 import { Bell, Lock, Shield, Globe, User, Camera, Trash2, Phone, Smartphone, Download, RotateCcw, Sun, Moon, RefreshCw } from 'lucide-react'
 import { useTheme } from 'next-themes'
@@ -713,13 +714,7 @@ export default function SettingsPage() {
               <Button variant="outline">Change Password</Button>
             </div>
             <Separator />
-            <div className="flex items-center justify-between">
-              <div>
-                <Label>Two-Factor Authentication</Label>
-                <p className="text-sm text-muted-foreground">Add an extra layer of security</p>
-              </div>
-              <Button variant="outline">Enable 2FA</Button>
-            </div>
+            <TwoFactorSettings />
             <Separator />
             <div className="flex items-center justify-between">
               <div>
