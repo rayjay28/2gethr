@@ -12,6 +12,8 @@ export interface CalendarSyncConnection {
   syncEnabled: boolean
   syncDirection: 'import' | 'export' | 'both'
   syncTasks: boolean
+  /** Auto-sync cadence in minutes: 10, 30, or 60. See components/calendar-auto-sync.tsx. */
+  syncIntervalMinutes: number
   lastSyncedAt: string | null
   createdAt: string
   updatedAt: string
@@ -70,7 +72,7 @@ export function useCalendarSync() {
 
   const updateConnection = useCallback(async (
     connectionId: string,
-    updates: { syncEnabled?: boolean; syncDirection?: string }
+    updates: { syncEnabled?: boolean; syncDirection?: string; syncIntervalMinutes?: number }
   ) => {
     const token = getAccessToken()
     const res = await fetch('/api/calendar-sync/connections', {
