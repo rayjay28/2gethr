@@ -1,7 +1,27 @@
 import { NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import { stripe, getTierFromPriceId } from "@/lib/stripe"
+import { notifyAdmin, EMAIL_TEMPLATES } from "@/lib/services/email"
 import type Stripe from "stripe"
+
+// Looks up the family name and the owning user's email for the admin
+// notification templates below. Returns null if the family can't be found
+// (shouldn't happen in practice, but notifications must never throw).
+async function getFamilyOwnerInfo(familyId: string): Promise<{ familyName: string; ownerEmail: string } | null> {
+  try {
+    const rows = await sql`
+      SELECT f.name AS family_name, u.email AS owner_email
+      FROM families f
+      JOIN users u ON u.id = f.owner_id
+      WHERE f.id = ${familyId}
+    `
+    if (rows.length === 0) return null
+    return { familyName: rows[0].family_name, ownerEmail: rows[0].owner_email }
+  } catch (error) {
+    console.error("[admin-notify] failed to look up family owner info:", error)
+    return null
+  }
+}
 
 // Stripe webhook handler for the subscription lifecycle. This is NOT
 // optional: fulfillment and subscription-state changes happen
@@ -140,6 +160,12 @@ async function activateSubscriptionFromSession(session: Stripe.Checkout.Session)
         'WEBHOOK', 'Checkout completed via Stripe', NOW()
       )
     `
+
+    const info = await getFamilyOwnerInfo(familyId)
+    if (info) {
+      const notice = EMAIL_TEMPLATES.ADMIN_TIER_CHANGED(info.ownerEmail, info.familyName, previousTier, tier)
+      await notifyAdmin(notice.subject, notice.html, notice.text)
+    }
   }
 }
 
@@ -157,6 +183,7 @@ async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   if (existing.length === 0) return
 
   const priceId = sub.items.data[0]?.price.id
+  const previousTier = existing[0].tier
   const tier = getTierFromPriceId(priceId) ?? existing[0].tier
   const item = sub.items.data[0]
 
@@ -198,6 +225,17 @@ async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
       )
     `
   }
+
+  // Tier can change independently of status (e.g. an upgrade/downgrade
+  // while the subscription stays ACTIVE the whole time), so this is
+  // checked separately from the status-history block above.
+  if (previousTier !== tier) {
+    const info = await getFamilyOwnerInfo(existing[0].family_id)
+    if (info) {
+      const notice = EMAIL_TEMPLATES.ADMIN_TIER_CHANGED(info.ownerEmail, info.familyName, previousTier, tier)
+      await notifyAdmin(notice.subject, notice.html, notice.text)
+    }
+  }
 }
 
 async function handleSubscriptionCanceled(sub: Stripe.Subscription) {
@@ -227,6 +265,12 @@ async function handleSubscriptionCanceled(sub: Stripe.Subscription) {
       'WEBHOOK', 'customer.subscription.deleted', NOW()
     )
   `
+
+  const info = await getFamilyOwnerInfo(existing[0].family_id)
+  if (info) {
+    const notice = EMAIL_TEMPLATES.ADMIN_SUBSCRIPTION_CANCELLED(info.ownerEmail, info.familyName, existing[0].tier)
+    await notifyAdmin(notice.subject, notice.html, notice.text)
+  }
 }
 
 async function recordInvoicePayment(invoice: Stripe.Invoice, status: "COMPLETED" | "FAILED") {
