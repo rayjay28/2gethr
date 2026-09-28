@@ -366,6 +366,28 @@ function CalendarSyncContent() {
                   </Select>
                 </div>
 
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium">Auto-Sync Frequency</p>
+                    <p className="text-sm text-muted-foreground">How often to automatically check for updates while the app is open</p>
+                  </div>
+                  <Select
+                    value={String(googleConnection.syncIntervalMinutes ?? 30)}
+                    onValueChange={(value) =>
+                      updateConnection(googleConnection.id, { syncIntervalMinutes: Number(value) })
+                    }
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">Every 10 minutes</SelectItem>
+                      <SelectItem value="30">Every 30 minutes</SelectItem>
+                      <SelectItem value="60">Every 60 minutes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="border-t pt-4 mt-4">
                   <div className="flex items-center gap-2 mb-3">
                     <ListTodo className="w-5 h-5 text-muted-foreground" />
@@ -474,7 +496,7 @@ function CalendarSyncContent() {
             <li>• <strong>Google Calendar:</strong> Full bidirectional sync - events flow both ways automatically</li>
             <li>• <strong>Google Tasks:</strong> Tasks with due dates sync to Google Tasks app and appear as reminders on Android</li>
             <li>• <strong>Other Calendars:</strong> Apple Calendar, Outlook, and any app that supports calendar subscription links can subscribe to a one-way feed of your Togethr events</li>
-            <li>• Sync runs automatically every 15 minutes when enabled</li>
+            <li>• Auto-sync runs at your chosen frequency (10, 30, or 60 minutes) while Togethr is open in a browser tab or installed app</li>
             <li>• Your calendar credentials are encrypted and stored securely</li>
           </ul>
         </CardContent>
