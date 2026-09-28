@@ -17,9 +17,9 @@ export async function GET(request: NextRequest) {
     }
 
     const connections = await sql`
-      SELECT 
+      SELECT
         id, provider, provider_account_email, external_calendar_id,
-        sync_enabled, sync_direction, sync_tasks, last_sync_at,
+        sync_enabled, sync_direction, sync_tasks, sync_interval_minutes, last_sync_at,
         created_at, updated_at
       FROM calendar_sync_connections
       WHERE user_id = ${user.id}
@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
         syncEnabled: conn.sync_enabled,
         syncDirection: conn.sync_direction,
         syncTasks: conn.sync_tasks ?? false,
+        syncIntervalMinutes: conn.sync_interval_minutes ?? 30,
         lastSyncedAt: conn.last_sync_at,
         createdAt: conn.created_at,
         updatedAt: conn.updated_at,
@@ -138,11 +139,18 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const { connectionId, syncEnabled, syncDirection } = await request.json()
+    const { connectionId, syncEnabled, syncDirection, syncIntervalMinutes } = await request.json()
 
     if (!connectionId) {
       return NextResponse.json(
         { success: false, error: 'Connection ID required' },
+        { status: 400 }
+      )
+    }
+
+    if (syncIntervalMinutes !== undefined && ![10, 30, 60].includes(syncIntervalMinutes)) {
+      return NextResponse.json(
+        { success: false, error: 'syncIntervalMinutes must be 10, 30, or 60' },
         { status: 400 }
       )
     }
@@ -155,15 +163,19 @@ export async function PATCH(request: NextRequest) {
     if (syncDirection) {
       values.syncDirection = syncDirection
     }
+    if (typeof syncIntervalMinutes === 'number') {
+      values.syncIntervalMinutes = syncIntervalMinutes
+    }
 
     const result = await sql`
       UPDATE calendar_sync_connections
-      SET 
+      SET
         sync_enabled = COALESCE(${values.syncEnabled ?? null}::boolean, sync_enabled),
         sync_direction = COALESCE(${values.syncDirection ?? null}::text, sync_direction),
+        sync_interval_minutes = COALESCE(${values.syncIntervalMinutes ?? null}::integer, sync_interval_minutes),
         updated_at = NOW()
       WHERE id = ${connectionId} AND user_id = ${user.id}
-      RETURNING id, sync_enabled, sync_direction
+      RETURNING id, sync_enabled, sync_direction, sync_interval_minutes
     `
 
     if (result.length === 0) {
@@ -179,6 +191,7 @@ export async function PATCH(request: NextRequest) {
         id: result[0].id,
         syncEnabled: result[0].sync_enabled,
         syncDirection: result[0].sync_direction,
+        syncIntervalMinutes: result[0].sync_interval_minutes,
       },
     })
   } catch (error) {
