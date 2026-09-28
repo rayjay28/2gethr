@@ -6,6 +6,7 @@ import {
   logAuditEvent,
 } from "@/lib/auth"
 import { z } from "zod"
+import { notifyAdmin, EMAIL_TEMPLATES } from "@/lib/services/email"
 
 const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -96,6 +97,16 @@ export async function POST(request: NextRequest) {
         NOW()
       )
     `
+
+    // Notify admin of the new signup. Awaited (not fire-and-forget): on
+    // Vercel's serverless runtime, an un-awaited promise can get cut off
+    // once the response is returned. notifyAdmin() itself never throws, so
+    // this can't fail or meaningfully slow down the user's registration.
+    const signupNotice = EMAIL_TEMPLATES.ADMIN_NEW_SIGNUP(
+      validatedData.email.toLowerCase(),
+      `${firstName} ${lastName}`.trim()
+    )
+    await notifyAdmin(signupNotice.subject, signupNotice.html, signupNotice.text)
 
     // Generate tokens
     const tokens = await generateTokenPair(userId)
