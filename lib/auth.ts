@@ -25,7 +25,7 @@ const REFRESH_TOKEN_EXPIRY = "7d"
 
 export interface JWTPayload {
   userId: string
-  type: "access" | "refresh"
+  type: "access" | "refresh" | "2fa_challenge"
   iat?: number
   exp?: number
 }
@@ -98,6 +98,32 @@ export async function generateRefreshToken(userId: string): Promise<string> {
     .setIssuedAt()
     .setExpirationTime(REFRESH_TOKEN_EXPIRY)
     .sign(REFRESH_TOKEN_SECRET)
+}
+
+// A short-lived token identifying a user who has passed the password check
+// at login but still needs to submit a 2FA code. Deliberately signed with
+// the access-token secret but with a distinct `type`, so it can never be
+// accepted by verifyAccessToken() (which checks `type === "access"`) even
+// if it leaked — it's only useful at the /api/auth/2fa/verify endpoint,
+// and only for 5 minutes.
+const TWO_FACTOR_CHALLENGE_EXPIRY = "5m"
+
+export async function generateTwoFactorChallengeToken(userId: string): Promise<string> {
+  return new SignJWT({ userId, type: "2fa_challenge" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(TWO_FACTOR_CHALLENGE_EXPIRY)
+    .sign(ACCESS_TOKEN_SECRET)
+}
+
+export async function verifyTwoFactorChallengeToken(token: string): Promise<JWTPayload | null> {
+  try {
+    const { payload } = await jwtVerify(token, ACCESS_TOKEN_SECRET)
+    if (payload.type !== "2fa_challenge") return null
+    return payload as unknown as JWTPayload
+  } catch {
+    return null
+  }
 }
 
 export async function verifyAccessToken(token: string): Promise<JWTPayload | null> {
