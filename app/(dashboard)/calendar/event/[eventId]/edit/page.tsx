@@ -23,6 +23,7 @@ import {
 import { ArrowLeft, Calendar, Clock, MapPin, Save } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { toast } from 'sonner'
+import { localDateTimeToISO, localStartOfDayToISO, localEndOfDayToISO } from '@/lib/datetime'
 
 const CATEGORIES = [
   { value: 'SCHOOL', label: 'School' },
@@ -92,16 +93,19 @@ export default function EditEventPage() {
     try {
       const token = getAccessToken()
       
-      // Build start and end times
+      // Build a correct, timezone-aware UTC instant from the local date/time
+      // inputs (see lib/datetime.ts). This used to force a trailing "Z"
+      // onto the locally-typed value, mislabeling it as already being UTC
+      // and shifting saved times by the browser's UTC offset.
       let startTime: string
       let endTime: string
-      
+
       if (formData.allDay) {
-        startTime = `${formData.startDate}T00:00:00.000Z`
-        endTime = `${formData.endDate}T23:59:59.000Z`
+        startTime = localStartOfDayToISO(formData.startDate)
+        endTime = localEndOfDayToISO(formData.endDate)
       } else {
-        startTime = `${formData.startDate}T${formData.startTime}:00.000Z`
-        endTime = `${formData.endDate}T${formData.endTime}:00.000Z`
+        startTime = localDateTimeToISO(formData.startDate, formData.startTime)
+        endTime = localDateTimeToISO(formData.endDate, formData.endTime)
       }
       
       const res = await fetch(`/api/events/${eventId}`, {
