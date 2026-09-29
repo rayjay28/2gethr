@@ -17,6 +17,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { TwoFactorSettings } from '@/components/two-factor-settings'
 import { ActiveSessions } from '@/components/active-sessions'
+import { usePushNotifications } from '@/hooks/use-push-notifications'
 import { toast } from 'sonner'
 import { Bell, Lock, Shield, Globe, User, Camera, Trash2, Phone, Smartphone, Download, RotateCcw, Sun, Moon, RefreshCw } from 'lucide-react'
 import { useTheme } from 'next-themes'
@@ -36,6 +37,7 @@ export default function SettingsPage() {
   const primaryFamily = families[0] || null
   const { access } = useSubscription(primaryFamily?.id || null)
   const { theme, setTheme, resolvedTheme } = useTheme()
+  const pushNotifications = usePushNotifications()
   const [mounted, setMounted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -114,15 +116,55 @@ export default function SettingsPage() {
     }
     if (user) loadSettings()
   }, [user])
-  
+
+  // The database preference and the browser's actual push subscription can
+  // drift apart (e.g. the toggle was saved "on" before this device ever
+  // granted permission, or the person revoked notifications in their browser
+  // settings). Once we know the real subscription state, reflect it rather
+  // than trusting the stored flag blindly.
+  useEffect(() => {
+    if (!pushNotifications.isLoading && !settingsLoading) {
+      setSettings(prev =>
+        prev.pushNotifications === pushNotifications.isSubscribed
+          ? prev
+          : { ...prev, pushNotifications: pushNotifications.isSubscribed }
+      )
+    }
+  }, [pushNotifications.isLoading, pushNotifications.isSubscribed, settingsLoading])
+
   // Check if user has SMS feature based on subscription (Basic or Premium)
   const hasSmsFeature = access?.tier === 'PREMIUM' || access?.tier === 'PREMIUM_PLUS'
   const hasPhoneAlerts = access?.tier === 'PREMIUM_PLUS'
 
   const handleToggle = async (key: keyof typeof settings) => {
     const newValue = !settings[key]
+
+    // Push notifications need more than a database flag: the browser has to
+    // actually grant permission and create a Push subscription (or tear one
+    // down) before we persist the preference, otherwise the toggle looks "on"
+    // with nothing behind it.
+    if (key === 'pushNotifications') {
+      if (newValue) {
+        if (!pushNotifications.isSupported) {
+          toast.error('Push notifications are not supported in this browser')
+          return
+        }
+        const ok = await pushNotifications.subscribe()
+        if (!ok) {
+          toast.error(
+            pushNotifications.error === 'Notification permission denied'
+              ? 'Notification permission was denied. Enable notifications for this site in your browser settings, then try again.'
+              : pushNotifications.error || 'Failed to enable push notifications'
+          )
+          return
+        }
+      } else {
+        await pushNotifications.unsubscribe()
+      }
+    }
+
     setSettings(prev => ({ ...prev, [key]: newValue }))
-    
+
     // Save notification settings to database
     if (['emailNotifications', 'pushNotifications', 'smsNotifications', 'phoneAlerts', 'weeklyDigest'].includes(key)) {
       try {
