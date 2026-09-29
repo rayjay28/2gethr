@@ -279,51 +279,57 @@ export default function TasksPage() {
                 return (
                   <div
                     key={task.id}
-                    className={`flex items-center gap-3 p-4 rounded-lg border transition-colors ${
-                      task.status === 'pending_approval' 
-                        ? 'border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950/20' 
+                    className={`flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-lg border transition-colors ${
+                      task.status === 'pending_approval'
+                        ? 'border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950/20'
                         : isOverdue
                           ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20'
                           : 'border-border hover:bg-muted/50'
                     }`}
                   >
-                    <div className={`w-1 h-16 rounded-full ${getStatusBarColor(task.status, isOverdue)}`} />
-                    
-                    <div className="flex-1 min-w-0">
-                      <Link href={`/tasks/${task.id}`} className="hover:underline">
-                        <p className="font-medium text-foreground truncate">{task.title}</p>
-                      </Link>
-                      <div className="flex items-center gap-3 mt-1 flex-wrap">
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <User className="w-3 h-3" />
-                          {assigneeName}
-                        </span>
-                        {task.due_date && (
-                          <span className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
-                            <Calendar className="w-3 h-3" />
-                            {isOverdue ? 'Overdue: ' : 'Due: '}
-                            {format(parseISO(task.due_date), 'MMM d')}
+                    {/* Title + metadata. Stacks full-width above the action row on
+                        narrow phones instead of sharing a row with it, which is what
+                        was causing the title/assignee/due-date text to overlap the
+                        status badge and buttons in portrait mode. */}
+                    <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                      <div className={`w-1 self-stretch sm:h-16 rounded-full shrink-0 ${getStatusBarColor(task.status, isOverdue)}`} />
+
+                      <div className="flex-1 min-w-0">
+                        <Link href={`/tasks/${task.id}`} className="hover:underline">
+                          <p className="font-medium text-foreground truncate">{task.title}</p>
+                        </Link>
+                        <div className="flex items-center gap-3 mt-1 flex-wrap">
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <User className="w-3 h-3" />
+                            {assigneeName}
                           </span>
-                        )}
-                        {task.category && (
-                          <Badge variant="outline" className="text-xs capitalize">{task.category}</Badge>
-                        )}
+                          {task.due_date && (
+                            <span className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+                              <Calendar className="w-3 h-3" />
+                              {isOverdue ? 'Overdue: ' : 'Due: '}
+                              {format(parseISO(task.due_date), 'MMM d')}
+                            </span>
+                          )}
+                          {task.category && (
+                            <Badge variant="outline" className="text-xs capitalize">{task.category}</Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:shrink-0">
                       <Button
                         size="sm"
                         variant="ghost"
                         className="h-8 w-8 p-0"
                         onClick={() => toggleFavorite('task', task.id)}
                       >
-                        <Star 
-                          className={`w-4 h-4 ${isFavorite('task', task.id) ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} 
+                        <Star
+                          className={`w-4 h-4 ${isFavorite('task', task.id) ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`}
                         />
                       </Button>
                       {getStatusBadge(task.status)}
-                      
+
                       {task.status === 'pending_approval' && (
                         <div className="flex gap-1">
                           <Button 
