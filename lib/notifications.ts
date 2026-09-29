@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db"
+import { sendPushToUser, isFirebaseConfigured } from "@/lib/services/push"
 
 // SMS notification function using Twilio (or similar service)
 // Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER in environment variables
@@ -105,7 +106,37 @@ export async function createNotification({
     `
     
     console.log('[Notification] Created successfully:', notificationId)
-    
+
+    // Every in-app notification also gets a best-effort real push
+    // notification, so the two systems this app has accumulated
+    // (this file's DB+SMS path and lib/services/notification-dispatcher.ts's
+    // FCM path) stop diverging. This never blocks or throws back to the
+    // caller: a user with no active push subscription just gets sent:0 from
+    // sendPushToUser, and any FCM error is logged, not propagated, so a
+    // stale token or a transient Firebase issue can't break task/event
+    // notifications that already worked before push existed.
+    if (isFirebaseConfigured()) {
+      try {
+        const clickAction =
+          typeof data.taskId === 'string'
+            ? `/tasks/${data.taskId}`
+            : typeof data.eventId === 'string'
+              ? `/calendar/event/${data.eventId}`
+              : '/'
+
+        const pushData: Record<string, string> = { type }
+        for (const [key, value] of Object.entries(data)) {
+          if (value !== undefined && value !== null) {
+            pushData[key] = String(value)
+          }
+        }
+
+        await sendPushToUser(userId, { title, body, data: pushData, clickAction })
+      } catch (pushError) {
+        console.error('[Notification] Push send failed (non-fatal):', pushError)
+      }
+    }
+
     // Check if user has SMS enabled and send if requested
     if (sendSms) {
       const userSmsPrefs = await sql`
