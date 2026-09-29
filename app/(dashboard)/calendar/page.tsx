@@ -153,25 +153,28 @@ export default function CalendarPage() {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex flex-col gap-4">
-        {/* Navigation Row */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        {/* Navigation Row. min-w-0/truncate on the title and shrink-0 on both
+            button groups keep a long month name (e.g. "September 2026") from
+            overflowing and overlapping the nav/new buttons on narrow phones
+            in portrait mode, matching the fix used for task card overlap. */}
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" size="icon" onClick={navigatePrevious} className="h-10 w-10 sm:h-10 sm:w-10">
               <ChevronLeft className="w-5 h-5" />
             </Button>
             <Button variant="outline" size="icon" onClick={navigateNext} className="h-10 w-10 sm:h-10 sm:w-10">
               <ChevronRight className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="sm" onClick={navigateToday} className="h-10 px-3 text-sm font-medium">
+            <Button variant="ghost" size="sm" onClick={navigateToday} className="h-10 px-2 sm:px-3 text-sm font-medium shrink-0">
               Today
             </Button>
           </div>
-          
-          <h1 className="text-lg sm:text-xl font-bold text-foreground text-center flex-1 px-2">
+
+          <h1 className="text-base sm:text-xl font-bold text-foreground text-center flex-1 min-w-0 truncate px-1 sm:px-2">
             {format(currentDate, viewMode === 'month' ? 'MMMM yyyy' : "'Week of' MMM d")}
           </h1>
-          
-          <Button asChild size="sm" className="h-10 w-10 sm:w-auto sm:px-4">
+
+          <Button asChild size="sm" className="h-10 w-10 sm:w-auto sm:px-4 shrink-0">
             <Link href={selectedDate ? `/calendar/new?date=${format(selectedDate, 'yyyy-MM-dd')}` : '/calendar/new'}>
               <Plus className="w-5 h-5 sm:mr-2" />
               <span className="hidden sm:inline">New</span>
