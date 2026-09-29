@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react'
 import { getAdminAccessToken } from '@/hooks/use-admin-auth'
 import Link from 'next/link'
-import { 
+import {
   Users, Home, CreditCard, TicketIcon, AlertTriangle,
-  TrendingUp, Clock, ArrowRight
+  TrendingUp, Clock, ArrowRight, Wallet, ArrowUpCircle
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -181,6 +181,34 @@ export default function AdminDashboard() {
           href="/admin/tickets"
           variant={stats.tickets.open > 20 ? 'warning' : 'default'}
         />
+      </div>
+
+      {/* Quick links */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Link href="/admin/upgrades">
+          <Card className="hover:bg-muted/50 transition-colors">
+            <CardContent className="flex items-center gap-3 py-4">
+              <ArrowUpCircle className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium text-sm">Upgrade Requests</p>
+                <p className="text-xs text-muted-foreground">Review pending subscription upgrade requests</p>
+              </div>
+              <ArrowRight className="h-4 w-4 ml-auto text-muted-foreground" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/admin/payments">
+          <Card className="hover:bg-muted/50 transition-colors">
+            <CardContent className="flex items-center gap-3 py-4">
+              <Wallet className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium text-sm">Payment Processing</p>
+                <p className="text-xs text-muted-foreground">View and manage payment transactions</p>
+              </div>
+              <ArrowRight className="h-4 w-4 ml-auto text-muted-foreground" />
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Secondary stats */}
