@@ -7,6 +7,7 @@ import { useSubscription } from '@/hooks/use-subscription'
 import { useTasks, updateTask } from '@/hooks/use-tasks'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Empty } from '@/components/ui/empty'
@@ -27,7 +28,6 @@ import {
   Trash2,
   ListTodo,
   CircleDot,
-  User,
   Pause,
   Play
 } from 'lucide-react'
@@ -421,6 +421,19 @@ export default function DashboardPage() {
             <div className="space-y-3">
               {upcomingTasks.map((task) => {
                 const taskOverdue = isPastDue(task)
+                const taskAssigneeName = task.child_display_name
+                  ? task.child_display_name
+                  : task.assignee_first_name
+                    ? `${task.assignee_first_name} ${task.assignee_last_name || ''}`.trim()
+                    : 'Unassigned'
+                const taskAssigneeAvatarSrc = task.child_avatar_url
+                  ? task.child_avatar_url
+                  : task.assigned_to_id && task.assignee_profile_photo_path
+                    ? `/api/avatar/${task.assigned_to_id}`
+                    : undefined
+                const taskAssigneeInitials = taskAssigneeName === 'Unassigned'
+                  ? '?'
+                  : taskAssigneeName.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase()).join('') || '?'
                 return (
                 <div
                   key={task.id}
@@ -439,14 +452,13 @@ export default function DashboardPage() {
                     </Link>
                     <div className={`flex items-center gap-2 text-xs ${taskOverdue ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>
                       {taskOverdue && <AlertCircle className="w-3 h-3" />}
-                      <User className="w-3 h-3" />
-                      <span>
-                        {task.child_display_name 
-                          ? task.child_display_name
-                          : task.assignee_first_name 
-                            ? `${task.assignee_first_name} ${task.assignee_last_name || ''}`.trim()
-                            : 'Unassigned'}
-                      </span>
+                      <Avatar className="w-4 h-4">
+                        {taskAssigneeAvatarSrc && <AvatarImage src={taskAssigneeAvatarSrc} alt={taskAssigneeName} />}
+                        <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+                          {taskAssigneeInitials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span>{taskAssigneeName}</span>
                       {task.due_date && (
                         <>
                           <span>|</span>
