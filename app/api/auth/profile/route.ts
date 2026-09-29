@@ -4,8 +4,14 @@ import { getUserFromRequest, hashPassword, logAuditEvent } from "@/lib/auth"
 import { z } from "zod"
 
 const updateProfileSchema = z.object({
-  firstName: z.string().min(1).max(100).optional(),
-  lastName: z.string().min(1).max(100).optional(),
+  // Empty strings are allowed here (no .min(1)) even though the UI shows
+  // "required"-looking name fields. The profile form always submits
+  // firstName/lastName alongside whatever field the user actually meant to
+  // change (e.g. phone), so if a user's name happens to be blank, every
+  // save - not just name edits - was getting rejected with a 400 before a
+  // name was ever entered. Blank names are harmless to persist.
+  firstName: z.string().max(100).optional(),
+  lastName: z.string().max(100).optional(),
   phone: z.string().max(20).optional().nullable(),
   timezone: z.string().optional(),
   dateOfBirth: z.string().optional().nullable(),
