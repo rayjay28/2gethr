@@ -99,7 +99,7 @@ export function useAdminAuth() {
   const logout = useCallback(async () => {
     const token = getAdminAccessToken()
     try {
-      await fetch('/api/admin/auth/logout', { 
+      await fetch('/api/admin/auth/logout', {
         method: 'POST',
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       })
@@ -111,6 +111,16 @@ export function useAdminAuth() {
     router.push('/admin/login')
   }, [mutate, router])
 
+  // Mirrors lib/admin-auth.ts's server-side hasPermission(): super admins have
+  // every permission, everyone else needs the permission explicitly granted.
+  // Kept as a plain client-safe function here since lib/admin-auth.ts pulls in
+  // next/headers/bcryptjs/db and can't be imported from a 'use client' page.
+  const hasPermission = useCallback((permission: string) => {
+    if (!admin) return false
+    if (admin.roles.includes('SUPER_ADMIN')) return true
+    return admin.permissions.includes(permission)
+  }, [admin])
+
   return {
     admin,
     isLoading,
@@ -118,5 +128,6 @@ export function useAdminAuth() {
     error,
     logout,
     mutate,
+    hasPermission,
   }
 }
