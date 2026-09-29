@@ -378,12 +378,12 @@ export default function DashboardPage() {
 
       {/* Upcoming Tasks Section */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="text-lg">Upcoming Tasks</CardTitle>
             <CardDescription>Tasks assigned to family members</CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {overdueCount > 0 && (
               <Badge variant="destructive" className="bg-red-500 text-white">
                 {overdueCount} overdue
@@ -437,36 +437,41 @@ export default function DashboardPage() {
                 return (
                 <div
                   key={task.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                  className={`flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg border transition-colors ${
                     taskOverdue
                       ? 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/20'
-                      : task.status?.toLowerCase() === 'pending_approval' 
-                        ? 'border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950/20' 
+                      : task.status?.toLowerCase() === 'pending_approval'
+                        ? 'border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950/20'
                         : 'border-border hover:bg-muted/50'
                   }`}
                 >
-                  <div className={`w-1 h-12 rounded-full ${getStatusBarColor(task.status, taskOverdue)}`} />
-                  <div className="flex-1 min-w-0">
-                    <Link href={`/tasks/${task.id}`} className="hover:underline">
-                      <p className={`font-medium truncate ${taskOverdue ? 'text-red-700 dark:text-red-400' : 'text-foreground'}`}>{task.title}</p>
-                    </Link>
-                    <div className={`flex items-center gap-2 text-xs ${taskOverdue ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>
-                      {taskOverdue && <AlertCircle className="w-3 h-3" />}
-                      <Avatar className="w-4 h-4">
-                        {taskAssigneeAvatarSrc && <AvatarImage src={taskAssigneeAvatarSrc} alt={taskAssigneeName} />}
-                        <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
-                          {taskAssigneeInitials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span>{taskAssigneeName}</span>
-                      {task.due_date && (
-                        <>
-                          <span>|</span>
-                          <span className={taskOverdue ? 'font-semibold' : ''}>
-                            {taskOverdue ? 'OVERDUE - ' : 'Due '}{format(parseISO(task.due_date), 'MMM d')}
-                          </span>
-                        </>
-                      )}
+                  {/* Title + metadata stacks full-width above the action row on narrow
+                      phones instead of sharing a row with it, matching the fix used for
+                      task-card text overlap in mobile portrait mode. */}
+                  <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                    <div className={`w-1 self-stretch sm:h-12 rounded-full shrink-0 ${getStatusBarColor(task.status, taskOverdue)}`} />
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/tasks/${task.id}`} className="hover:underline">
+                        <p className={`font-medium truncate ${taskOverdue ? 'text-red-700 dark:text-red-400' : 'text-foreground'}`}>{task.title}</p>
+                      </Link>
+                      <div className={`flex items-center gap-2 text-xs flex-wrap ${taskOverdue ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>
+                        {taskOverdue && <AlertCircle className="w-3 h-3" />}
+                        <Avatar className="w-4 h-4">
+                          {taskAssigneeAvatarSrc && <AvatarImage src={taskAssigneeAvatarSrc} alt={taskAssigneeName} />}
+                          <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+                            {taskAssigneeInitials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span>{taskAssigneeName}</span>
+                        {task.due_date && (
+                          <>
+                            <span>|</span>
+                            <span className={taskOverdue ? 'font-semibold' : ''}>
+                              {taskOverdue ? 'OVERDUE - ' : 'Due '}{format(parseISO(task.due_date), 'MMM d')}
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                   {task.status?.toLowerCase() === 'pending_approval' ? (
@@ -553,34 +558,36 @@ export default function DashboardPage() {
               {upcomingEvents.map((event) => (
                 <div
                   key={event.id}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
                 >
-                  <div className={`w-1 h-12 rounded-full ${getCategoryColor(event.category)}`} />
-                  <div className="flex-1 min-w-0">
-                    <Link href={`/calendar/event/${event.id}`} className="hover:underline">
-                      <p className="font-medium text-foreground truncate">{event.title}</p>
-                    </Link>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      <span>{formatEventDate(event.startTime)}</span>
-                      {!event.allDay && (
-                        <>
-                          <span>|</span>
-                          <span>{format(parseISO(event.startTime), 'h:mm a')}</span>
-                        </>
-                      )}
-                      {event.location && (
-                        <>
-                          <span>|</span>
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
-                            <span className="truncate max-w-[150px]">{event.location}</span>
-                          </span>
-                        </>
-                      )}
+                  <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                    <div className={`w-1 self-stretch sm:h-12 rounded-full shrink-0 ${getCategoryColor(event.category)}`} />
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/calendar/event/${event.id}`} className="hover:underline">
+                        <p className="font-medium text-foreground truncate">{event.title}</p>
+                      </Link>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                        <Calendar className="w-3 h-3" />
+                        <span>{formatEventDate(event.startTime)}</span>
+                        {!event.allDay && (
+                          <>
+                            <span>|</span>
+                            <span>{format(parseISO(event.startTime), 'h:mm a')}</span>
+                          </>
+                        )}
+                        {event.location && (
+                          <>
+                            <span>|</span>
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              <span className="truncate max-w-[150px]">{event.location}</span>
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:shrink-0">
                     {event.allDay && (
                       <Badge variant="secondary" className="text-xs">All day</Badge>
                     )}
