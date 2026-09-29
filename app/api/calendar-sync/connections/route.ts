@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
     const connections = await sql`
       SELECT
         id, provider, provider_account_email, external_calendar_id,
-        sync_enabled, sync_direction, sync_tasks, sync_interval_minutes, last_sync_at,
+        sync_enabled, sync_direction, sync_tasks, sync_interval_minutes,
+        task_sync_interval_minutes, last_sync_at,
         created_at, updated_at
       FROM calendar_sync_connections
       WHERE user_id = ${user.id}
@@ -31,12 +32,13 @@ export async function GET(request: NextRequest) {
       connections: connections.map(conn => ({
         id: conn.id,
         provider: conn.provider,
-        calendarName: conn.provider_account_email || (conn.provider === 'google' ? 'Google Calendar' : 'Calendar'),
+        calendarName: conn.provider_account_email || (conn.provider === 'google' ? 'Google Calendar' : 'Apple Calendar'),
         externalCalendarId: conn.external_calendar_id,
         syncEnabled: conn.sync_enabled,
         syncDirection: conn.sync_direction,
         syncTasks: conn.sync_tasks ?? false,
         syncIntervalMinutes: conn.sync_interval_minutes ?? 30,
+        taskSyncIntervalMinutes: conn.task_sync_interval_minutes ?? 30,
         lastSyncedAt: conn.last_sync_at,
         createdAt: conn.created_at,
         updatedAt: conn.updated_at,
@@ -139,7 +141,7 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const { connectionId, syncEnabled, syncDirection, syncIntervalMinutes } = await request.json()
+    const { connectionId, syncEnabled, syncDirection, syncIntervalMinutes, taskSyncIntervalMinutes, syncTasks } = await request.json()
 
     if (!connectionId) {
       return NextResponse.json(
@@ -148,9 +150,18 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    if (syncIntervalMinutes !== undefined && ![10, 30, 60].includes(syncIntervalMinutes)) {
+    const ALLOWED_INTERVALS = [1, 10, 30, 60]
+
+    if (syncIntervalMinutes !== undefined && !ALLOWED_INTERVALS.includes(syncIntervalMinutes)) {
       return NextResponse.json(
-        { success: false, error: 'syncIntervalMinutes must be 10, 30, or 60' },
+        { success: false, error: 'syncIntervalMinutes must be 1, 10, 30, or 60' },
+        { status: 400 }
+      )
+    }
+
+    if (taskSyncIntervalMinutes !== undefined && !ALLOWED_INTERVALS.includes(taskSyncIntervalMinutes)) {
+      return NextResponse.json(
+        { success: false, error: 'taskSyncIntervalMinutes must be 1, 10, 30, or 60' },
         { status: 400 }
       )
     }
@@ -166,6 +177,12 @@ export async function PATCH(request: NextRequest) {
     if (typeof syncIntervalMinutes === 'number') {
       values.syncIntervalMinutes = syncIntervalMinutes
     }
+    if (typeof taskSyncIntervalMinutes === 'number') {
+      values.taskSyncIntervalMinutes = taskSyncIntervalMinutes
+    }
+    if (typeof syncTasks === 'boolean') {
+      values.syncTasks = syncTasks
+    }
 
     const result = await sql`
       UPDATE calendar_sync_connections
@@ -173,9 +190,11 @@ export async function PATCH(request: NextRequest) {
         sync_enabled = COALESCE(${values.syncEnabled ?? null}::boolean, sync_enabled),
         sync_direction = COALESCE(${values.syncDirection ?? null}::text, sync_direction),
         sync_interval_minutes = COALESCE(${values.syncIntervalMinutes ?? null}::integer, sync_interval_minutes),
+        task_sync_interval_minutes = COALESCE(${values.taskSyncIntervalMinutes ?? null}::integer, task_sync_interval_minutes),
+        sync_tasks = COALESCE(${values.syncTasks ?? null}::boolean, sync_tasks),
         updated_at = NOW()
       WHERE id = ${connectionId} AND user_id = ${user.id}
-      RETURNING id, sync_enabled, sync_direction, sync_interval_minutes
+      RETURNING id, sync_enabled, sync_direction, sync_interval_minutes, task_sync_interval_minutes, sync_tasks
     `
 
     if (result.length === 0) {
@@ -192,6 +211,8 @@ export async function PATCH(request: NextRequest) {
         syncEnabled: result[0].sync_enabled,
         syncDirection: result[0].sync_direction,
         syncIntervalMinutes: result[0].sync_interval_minutes,
+        taskSyncIntervalMinutes: result[0].task_sync_interval_minutes,
+        syncTasks: result[0].sync_tasks,
       },
     })
   } catch (error) {

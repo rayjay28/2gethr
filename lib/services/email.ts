@@ -279,6 +279,39 @@ export const EMAIL_TEMPLATES = {
     text: `Task Reminder: ${taskTitle} assigned to ${assignedTo} is due ${dueDate}`,
   }),
 
+  TASK_STATUS_CHANGED: (taskTitle: string, newStatus: string, changedBy: string) => ({
+    subject: `Task Update: ${taskTitle}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #f4f4f5;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+          <div style="background-color: #ffffff; border-radius: 12px; padding: 40px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h1 style="color: #0d9488; font-size: 24px; margin: 0 0 20px;">Task Update</h1>
+            <div style="background-color: #f0fdfa; border-left: 4px solid #0d9488; padding: 20px; border-radius: 0 8px 8px 0; margin-bottom: 20px;">
+              <h2 style="color: #374151; font-size: 18px; margin: 0 0 10px;">${taskTitle}</h2>
+              <p style="color: #6b7280; font-size: 14px; margin: 0;">
+                <strong>${changedBy}</strong> marked this task as <strong>${newStatus}</strong>.
+              </p>
+            </div>
+            <div style="text-align: center;">
+              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://safelink.app'}/tasks"
+                 style="display: inline-block; background-color: #0d9488; color: white; text-decoration: none; padding: 12px 30px; border-radius: 8px; font-weight: 600;">
+                View Task
+              </a>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `${changedBy} marked "${taskTitle}" as ${newStatus}`,
+  }),
+
   PASSWORD_RESET: (resetLink: string) => ({
     subject: 'Reset Your Togethr Password',
     html: `

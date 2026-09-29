@@ -12,8 +12,10 @@ export interface CalendarSyncConnection {
   syncEnabled: boolean
   syncDirection: 'import' | 'export' | 'both'
   syncTasks: boolean
-  /** Auto-sync cadence in minutes: 10, 30, or 60. See components/calendar-auto-sync.tsx. */
+  /** Auto-sync cadence in minutes: 1, 10, 30, or 60. See components/calendar-auto-sync.tsx. */
   syncIntervalMinutes: number
+  /** Task auto-sync cadence in minutes: 1, 10, 30, or 60. Independent from syncIntervalMinutes. */
+  taskSyncIntervalMinutes: number
   lastSyncedAt: string | null
   createdAt: string
   updatedAt: string
@@ -72,7 +74,7 @@ export function useCalendarSync() {
 
   const updateConnection = useCallback(async (
     connectionId: string,
-    updates: { syncEnabled?: boolean; syncDirection?: string; syncIntervalMinutes?: number }
+    updates: { syncEnabled?: boolean; syncDirection?: string; syncIntervalMinutes?: number; taskSyncIntervalMinutes?: number; syncTasks?: boolean }
   ) => {
     const token = getAccessToken()
     const res = await fetch('/api/calendar-sync/connections', {
@@ -92,7 +94,7 @@ export function useCalendarSync() {
     }
   }, [mutate])
 
-  const syncNow = useCallback(async (provider: 'google') => {
+  const syncNow = useCallback(async (provider: 'google' | 'apple') => {
     setIsSyncing(true)
     setSyncError(null)
 
@@ -120,16 +122,40 @@ export function useCalendarSync() {
     }
   }, [mutate])
 
+  const connectApple = useCallback(async (appleId: string, appPassword: string) => {
+    const token = getAccessToken()
+    const res = await fetch('/api/calendar-sync/apple/connect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ appleId, appPassword }),
+    })
+
+    const data = await res.json()
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to connect Apple account')
+    }
+
+    mutate()
+    return data
+  }, [mutate])
+
   const googleConnection = data?.connections?.find(c => c.provider === 'google')
+  const appleConnection = data?.connections?.find(c => c.provider === 'apple')
 
   return {
     connections: data?.connections || [],
     googleConnection,
+    appleConnection,
     isLoading,
     error,
     isSyncing,
     syncError,
     connectGoogle,
+    connectApple,
     disconnect,
     updateConnection,
     syncNow,

@@ -65,6 +65,32 @@ export default function LocationPage() {
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
   const [updatingSettings, setUpdatingSettings] = useState(false)
   const [requestingLocation, setRequestingLocation] = useState<string | null>(null)
+  // How often THIS viewer's screen auto-refreshes everyone's location/geofence
+  // status (distinct from mySettings.updateIntervalSec, which controls how
+  // often a member with ACTIVE mode PUBLISHES their own location). Previously
+  // hardcoded to 30s with no way to tighten it - e.g. to keep a closer eye on
+  // a kid's geofence arrival/departure status. Stored per-browser since it's
+  // a viewing preference, not something that needs to sync across devices.
+  const [viewRefreshIntervalSec, setViewRefreshIntervalSec] = useState(30)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('location-view-refresh-interval-sec')
+      if (saved) setViewRefreshIntervalSec(parseInt(saved, 10))
+    } catch {
+      // localStorage unavailable (private browsing, etc.) - just keep the default
+    }
+  }, [])
+
+  const handleViewRefreshIntervalChange = (value: string) => {
+    const seconds = parseInt(value, 10)
+    setViewRefreshIntervalSec(seconds)
+    try {
+      localStorage.setItem('location-view-refresh-interval-sec', String(seconds))
+    } catch {
+      // ignore
+    }
+  }
 
   const loadLocations = useCallback(async () => {
     if (!selectedFamily?.id) return
@@ -188,17 +214,17 @@ export default function LocationPage() {
     }
   }, [selectedFamily?.id, loadLocations, loadMySettings, familiesLoading])
 
-  // Auto-refresh locations every 30 seconds when page is visible
-  // Auto-refresh family locations every 30 seconds
+  // Auto-refresh locations (and geofence arrival/departure status) at the
+  // viewer's chosen interval when the page is visible.
   useEffect(() => {
     const interval = setInterval(() => {
       if (!document.hidden && selectedFamily?.id) {
         loadLocations()
       }
-    }, 30000)
-    
+    }, viewRefreshIntervalSec * 1000)
+
     return () => clearInterval(interval)
-  }, [selectedFamily?.id, loadLocations])
+  }, [selectedFamily?.id, loadLocations, viewRefreshIntervalSec])
   
   // Live location tracking - continuously share location when mode is ACTIVE
   useEffect(() => {
@@ -909,8 +935,33 @@ export default function LocationPage() {
                 Higher frequency uses more battery. Recommended: 5 minutes.
               </p>
             </div>
+
+            <div className="space-y-3">
+              <Label>Screen Refresh Interval</Label>
+              <p className="text-sm text-muted-foreground">
+                How often this screen auto-refreshes family locations and geofence status (e.g. arrival/departure alerts for kids)
+              </p>
+              <Select
+                value={String(viewRefreshIntervalSec)}
+                onValueChange={handleViewRefreshIntervalChange}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select refresh interval" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">Every 10 seconds</SelectItem>
+                  <SelectItem value="30">Every 30 seconds (Default)</SelectItem>
+                  <SelectItem value="60">Every 1 minute</SelectItem>
+                  <SelectItem value="120">Every 2 minutes</SelectItem>
+                  <SelectItem value="300">Every 5 minutes</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Only affects this device/browser - it doesn&apos;t change how often anyone&apos;s location is shared.
+              </p>
+            </div>
           </div>
-          
+
           <DialogFooter>
             <Button onClick={() => setShowSettingsDialog(false)}>
               Done

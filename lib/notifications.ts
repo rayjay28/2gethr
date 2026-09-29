@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db"
 import { sendPushToUser, isFirebaseConfigured } from "@/lib/services/push"
+import { sendEmail, isResendConfigured, EMAIL_TEMPLATES } from "@/lib/services/email"
 
 // SMS notification function using Twilio (or similar service)
 // Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER in environment variables
@@ -76,6 +77,7 @@ type NotificationData = {
   body: string
   data?: Record<string, unknown>
   sendSms?: boolean // If true and user has phone, also send SMS
+  sendEmail?: boolean // If true and user has email notifications enabled, also send an email
 }
 
 export async function createNotification({
@@ -84,7 +86,8 @@ export async function createNotification({
   title,
   body,
   data = {},
-  sendSms = false
+  sendSms = false,
+  sendEmail: sendEmailFlag = false
 }: NotificationData): Promise<{ success: boolean; notificationId?: string; error?: string }> {
   try {
     const notificationId = crypto.randomUUID()
@@ -149,7 +152,38 @@ export async function createNotification({
         await sendSmsNotification(userSmsPrefs[0].phone, `FamilyApp: ${title} - ${body}`)
       }
     }
-    
+
+    // Check if user has email notifications enabled and send if requested.
+    // Gated on the same reminder_settings.email_enabled column used
+    // elsewhere in the app, mirroring the sms_enabled gate above. This is
+    // the mechanism behind task-status-change emails: previously no task
+    // lifecycle event (assign, complete, approve, reject, etc.) ever sent
+    // an email at all - createNotification only wrote an in-app row and,
+    // optionally, an SMS.
+    if (sendEmailFlag && isResendConfigured()) {
+      try {
+        const userEmailPrefs = await sql`
+          SELECT u.email, u.name, rs.email_enabled
+          FROM users u
+          LEFT JOIN reminder_settings rs ON u.id = rs.user_id
+          WHERE u.id = ${userId}
+        `
+        if (userEmailPrefs.length > 0 && userEmailPrefs[0].email && userEmailPrefs[0].email_enabled) {
+          const taskTitle = typeof data.taskTitle === 'string' ? data.taskTitle : title
+          const newStatus = typeof data.newStatus === 'string' ? data.newStatus : null
+          const changedBy = typeof data.changedBy === 'string' ? data.changedBy : 'Someone'
+
+          const template = newStatus
+            ? EMAIL_TEMPLATES.TASK_STATUS_CHANGED(taskTitle, newStatus, changedBy)
+            : { subject: title, html: `<p>${body}</p>`, text: body }
+
+          await sendEmail({ to: userEmailPrefs[0].email, ...template })
+        }
+      } catch (emailError) {
+        console.error('[Notification] Email send failed (non-fatal):', emailError)
+      }
+    }
+
     return { success: true, notificationId }
   } catch (error) {
     console.error('Failed to create notification:', error)

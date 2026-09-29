@@ -381,6 +381,7 @@ function CalendarSyncContent() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="1">Every 1 minute</SelectItem>
                       <SelectItem value="10">Every 10 minutes</SelectItem>
                       <SelectItem value="30">Every 30 minutes</SelectItem>
                       <SelectItem value="60">Every 60 minutes</SelectItem>
@@ -394,12 +395,12 @@ function CalendarSyncContent() {
                     <p className="font-medium">Task Sync to Google Tasks</p>
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Sync your Togethr tasks with due dates to Google Tasks. 
+                    Sync your Togethr tasks with due dates to Google Tasks.
                     Tasks will appear in the Google Tasks app and show as reminders on your Android phone.
                   </p>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <Switch 
+                      <Switch
                         checked={taskSyncEnabled}
                         onCheckedChange={handleToggleTaskSync}
                         disabled={isTogglingTaskSync}
@@ -409,9 +410,9 @@ function CalendarSyncContent() {
                       </span>
                     </div>
                     {taskSyncEnabled && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={handleSyncTasksNow}
                       >
                         <RefreshCw className="w-4 h-4 mr-2" />
@@ -419,6 +420,30 @@ function CalendarSyncContent() {
                       </Button>
                     )}
                   </div>
+                  {taskSyncEnabled && (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-4">
+                      <div>
+                        <p className="font-medium text-sm">Task Auto-Sync Frequency</p>
+                        <p className="text-sm text-muted-foreground">How often to automatically sync tasks</p>
+                      </div>
+                      <Select
+                        value={String(googleConnection.taskSyncIntervalMinutes ?? 30)}
+                        onValueChange={(value) =>
+                          updateConnection(googleConnection.id, { taskSyncIntervalMinutes: Number(value) })
+                        }
+                      >
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">Every 1 minute</SelectItem>
+                          <SelectItem value="10">Every 10 minutes</SelectItem>
+                          <SelectItem value="30">Every 30 minutes</SelectItem>
+                          <SelectItem value="60">Every 60 minutes</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               </div>
             </>
@@ -431,7 +456,10 @@ function CalendarSyncContent() {
         </CardContent>
       </Card>
 
-      {/* Other Calendars (Apple, Outlook, and any app that supports calendar subscription URLs) */}
+      {/* Apple Calendar & Reminders (real bidirectional CalDAV sync) */}
+      <AppleCalendarCard />
+
+      {/* Other Calendars (Outlook, and any app that supports calendar subscription URLs) */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
@@ -495,12 +523,194 @@ function CalendarSyncContent() {
           <ul className="text-sm text-muted-foreground space-y-2">
             <li>• <strong>Google Calendar:</strong> Full bidirectional sync - events flow both ways automatically</li>
             <li>• <strong>Google Tasks:</strong> Tasks with due dates sync to Google Tasks app and appear as reminders on Android</li>
-            <li>• <strong>Other Calendars:</strong> Apple Calendar, Outlook, and any app that supports calendar subscription links can subscribe to a one-way feed of your Togethr events</li>
-            <li>• Auto-sync runs at your chosen frequency (10, 30, or 60 minutes) while Togethr is open in a browser tab or installed app</li>
+            <li>• <strong>Apple Calendar & Reminders:</strong> Full bidirectional sync via CalDAV using your Apple ID and an app-specific password - events and reminders flow both ways automatically</li>
+            <li>• <strong>Other Calendars:</strong> Outlook, and any app that supports calendar subscription links, can subscribe to a one-way feed of your Togethr events</li>
+            <li>• Auto-sync runs at your chosen frequency (1, 10, 30, or 60 minutes) while Togethr is open in a browser tab or installed app</li>
             <li>• Your calendar credentials are encrypted and stored securely</li>
           </ul>
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+// Apple's logo isn't ours to reproduce as an icon; a plain calendar glyph
+// stands in for it here (see GoogleCalendarIcon above for the Google one).
+function AppleCalendarCard() {
+  const { appleConnection, connectApple, disconnect, updateConnection, syncNow } = useCalendarSync()
+  const [appleId, setAppleId] = useState('')
+  const [appPassword, setAppPassword] = useState('')
+  const [connecting, setConnecting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+
+  const handleConnect = async () => {
+    if (!appleId || !appPassword) {
+      toast.error('Enter your Apple ID and an app-specific password')
+      return
+    }
+    setConnecting(true)
+    try {
+      await connectApple(appleId, appPassword)
+      setAppleId('')
+      setAppPassword('')
+      toast.success('Apple Calendar connected')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to connect Apple Calendar')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  const handleSyncNow = async () => {
+    setSyncing(true)
+    try {
+      await syncNow('apple')
+      toast.success('Apple Calendar synced')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <Calendar className="w-8 h-8 text-muted-foreground" />
+          <div>
+            <CardTitle className="text-lg">Apple Calendar & Reminders</CardTitle>
+            <CardDescription>
+              Bidirectional sync with iCloud Calendar and Reminders via CalDAV
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {appleConnection ? (
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <p className="font-medium">{appleConnection.calendarName}</p>
+                <p className="text-sm text-muted-foreground">
+                  {appleConnection.lastSyncedAt
+                    ? `Last synced ${format(new Date(appleConnection.lastSyncedAt), 'MMM d, h:mm a')}`
+                    : 'Not yet synced'}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleSyncNow} disabled={syncing}>
+                  {syncing ? <Spinner className="w-4 h-4 mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                  Sync Now
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => disconnect(appleConnection.id)}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <p className="font-medium">Sync Enabled</p>
+                <p className="text-sm text-muted-foreground">Turn Apple Calendar & Reminders sync on or off</p>
+              </div>
+              <Switch
+                checked={appleConnection.syncEnabled}
+                onCheckedChange={(checked) => updateConnection(appleConnection.id, { syncEnabled: checked })}
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <p className="font-medium">Auto-Sync Frequency</p>
+                <p className="text-sm text-muted-foreground">How often to automatically check for updates</p>
+              </div>
+              <Select
+                value={String(appleConnection.syncIntervalMinutes ?? 30)}
+                onValueChange={(value) => updateConnection(appleConnection.id, { syncIntervalMinutes: Number(value) })}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Every 1 minute</SelectItem>
+                  <SelectItem value="10">Every 10 minutes</SelectItem>
+                  <SelectItem value="30">Every 30 minutes</SelectItem>
+                  <SelectItem value="60">Every 60 minutes</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="border-t pt-4 mt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <ListTodo className="w-5 h-5 text-muted-foreground" />
+                <p className="font-medium">Task Sync to Apple Reminders</p>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={appleConnection.syncTasks}
+                    onCheckedChange={(checked) => updateConnection(appleConnection.id, { syncTasks: checked })}
+                  />
+                  <span className="text-sm">{appleConnection.syncTasks ? 'Enabled' : 'Disabled'}</span>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-4">
+                <div>
+                  <p className="font-medium text-sm">Task Auto-Sync Frequency</p>
+                  <p className="text-sm text-muted-foreground">How often to automatically sync reminders</p>
+                </div>
+                <Select
+                  value={String(appleConnection.taskSyncIntervalMinutes ?? 30)}
+                  onValueChange={(value) => updateConnection(appleConnection.id, { taskSyncIntervalMinutes: Number(value) })}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Every 1 minute</SelectItem>
+                    <SelectItem value="10">Every 10 minutes</SelectItem>
+                    <SelectItem value="30">Every 30 minutes</SelectItem>
+                    <SelectItem value="60">Every 60 minutes</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Apple requires an app-specific password (not your regular Apple ID password) for
+              third-party apps like Togethr. Generate one at{' '}
+              <a
+                href="https://appleid.apple.com/account/manage"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                appleid.apple.com
+              </a>{' '}
+              under Sign-In and Security → App-Specific Passwords.
+            </p>
+            <Input
+              placeholder="Apple ID (email)"
+              type="email"
+              value={appleId}
+              onChange={(e) => setAppleId(e.target.value)}
+            />
+            <Input
+              placeholder="App-specific password"
+              type="password"
+              value={appPassword}
+              onChange={(e) => setAppPassword(e.target.value)}
+            />
+            <Button onClick={handleConnect} disabled={connecting} className="w-full sm:w-auto">
+              {connecting ? <Spinner className="w-4 h-4 mr-2" /> : <Calendar className="w-4 h-4 mr-2" />}
+              Connect Apple Calendar
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }

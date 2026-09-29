@@ -55,15 +55,26 @@ async function syncTaskStatusUpdate(
   
   const statusMessage = statusMessages[newStatus] || `status changed to ${newStatus}`
   
+  // Look up the display name of whoever made the change, for the email/notification body.
+  const changedByUser = await sql`SELECT name FROM users WHERE id = ${userId}`
+  const changedByName = changedByUser[0]?.name || 'Someone'
+
   for (const notifyUserId of notifyUsers) {
     await createNotification({
       userId: notifyUserId,
       type: 'TASK_ASSIGNED',
       title: `Task ${statusMessage}`,
       body: `"${task.title}" ${statusMessage}`,
+      // sendEmail: true routes this through createNotification's email path
+      // (lib/notifications.ts), gated on the recipient's own
+      // reminder_settings.email_enabled - previously no task status change
+      // ever produced an email at all, only the in-app/push notification.
+      sendEmail: true,
       data: {
         taskId,
         newStatus,
+        taskTitle: task.title,
+        changedBy: changedByName,
         familyId: task.family_id,
         ...additionalData
       }

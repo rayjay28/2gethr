@@ -1,31 +1,51 @@
-import sharp from 'sharp';
-import fs from 'fs';
-import path from 'path';
+// Regenerates public/icons/*.png (the Android/PWA icon ladder used for the
+// TWA/Play Store build) from the current logo source files. Run this again
+// any time togethr-icon-blue.png / togethr-icon-blue-maskable.png change,
+// so the icon pack stays in sync with the logo instead of going stale (see
+// the old icon-*.jpg ladder this replaced, which was generated once against
+// a different, outdated logo and never regenerated).
+//
+// Usage: node scripts/convert-icons-to-png.js
+//
+// Requires the `sharp` package. If it isn't in node_modules, either
+// `npm install sharp` or point NODE_PATH at wherever it's globally
+// installed before running this.
+import sharp from 'sharp'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
-const iconsDir = '/vercel/share/v0-project/public/icons';
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const projectRoot = path.join(__dirname, '..')
+const iconsDir = path.join(projectRoot, 'public/icons')
 
-// Get all JPG files in the icons directory
-const jpgFiles = fs.readdirSync(iconsDir).filter(file => file.endsWith('.jpg'));
+const SRC = path.join(iconsDir, 'togethr-icon-blue.png')
+const SRC_MASKABLE = path.join(iconsDir, 'togethr-icon-blue-maskable.png')
 
-console.log(`Found ${jpgFiles.length} JPG files to convert`);
+const SIZES = [48, 72, 96, 128, 144, 192, 256, 384, 512, 1024]
+const MASKABLE_SIZES = [192, 512]
 
-for (const jpgFile of jpgFiles) {
-  const inputPath = path.join(iconsDir, jpgFile);
-  const outputPath = path.join(iconsDir, jpgFile.replace('.jpg', '.png'));
-  
-  try {
-    await sharp(inputPath)
-      .png()
-      .toFile(outputPath);
-    
-    console.log(`Converted: ${jpgFile} -> ${jpgFile.replace('.jpg', '.png')}`);
-    
-    // Remove the old JPG file
-    fs.unlinkSync(inputPath);
-    console.log(`Removed: ${jpgFile}`);
-  } catch (error) {
-    console.error(`Error converting ${jpgFile}:`, error.message);
+async function run() {
+  for (const size of SIZES) {
+    const out = path.join(iconsDir, `icon-${size}x${size}.png`)
+    await sharp(SRC).resize(size, size).png().toFile(out)
+    console.log('wrote', out)
   }
+
+  for (const size of MASKABLE_SIZES) {
+    const out = path.join(iconsDir, `icon-maskable-${size}x${size}.png`)
+    await sharp(SRC_MASKABLE).resize(size, size).png().toFile(out)
+    console.log('wrote', out)
+  }
+
+  // Play Console's listing icon must be a flat 512x512 PNG with no alpha channel.
+  const playStoreOut = path.join(iconsDir, 'play-store-icon-512x512.png')
+  await sharp(SRC).resize(512, 512).flatten({ background: '#3b4563' }).png().toFile(playStoreOut)
+  console.log('wrote', playStoreOut)
+
+  console.log('Done! Icon pack regenerated from the current logo.')
 }
 
-console.log('Done! All icons converted to PNG.');
+run().catch((error) => {
+  console.error('Icon generation failed:', error.message)
+  process.exit(1)
+})
