@@ -18,7 +18,7 @@
       "purpose": "any"
     },
     {
-      "src": "/icons/togethr-icon-blue.png",
+      "src": "/icons/togethr-icon-blue-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
