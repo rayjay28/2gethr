@@ -212,6 +212,13 @@ export default function DashboardPage() {
     )
   }
 
+  // Members shown as a facepile on the Family bubble card (limit avoids the
+  // card overflowing when a family has many members; the rest collapse into
+  // a "+N" bubble).
+  const familyMembers = primaryFamily?.members || []
+  const visibleFamilyMembers = familyMembers.slice(0, 3)
+  const extraFamilyMemberCount = familyMembers.length - visibleFamilyMembers.length
+
   if (!primaryFamily) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -263,8 +270,44 @@ export default function DashboardPage() {
         <Link href="/family">
           <Card className="cursor-pointer transition-all hover:shadow-md hover:border-primary/50 active:scale-[0.98]">
             <CardContent className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 p-3 sm:p-6">
-              <div className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/10 text-primary">
-                <Users className="w-5 h-5 sm:w-6 sm:h-6" />
+              {/* Facepile of member profile photos instead of a generic icon.
+                  Capped at 3 avatars + a "+N" bubble so it stays legible in
+                  this small card; falls back to initials (matching the
+                  Family page) for members without a photo, and to the Users
+                  icon if the family somehow has no members. */}
+              <div className="flex items-center -space-x-2 sm:-space-x-3 shrink-0">
+                {visibleFamilyMembers.length > 0 ? (
+                  visibleFamilyMembers.map((member) => {
+                    const initials = member.displayName
+                      ?.split(' ')
+                      .map(n => n[0])
+                      .join('')
+                      .toUpperCase() || '?'
+                    return (
+                      <Avatar
+                        key={member.id}
+                        className="w-9 h-9 sm:w-11 sm:h-11 border-2 border-background"
+                      >
+                        <AvatarImage
+                          src={member.avatarUrl ? `/api/files?pathname=${encodeURIComponent(member.avatarUrl)}` : undefined}
+                          alt={member.displayName}
+                        />
+                        <AvatarFallback className="text-xs sm:text-sm bg-primary/10 text-primary">
+                          {initials}
+                        </AvatarFallback>
+                      </Avatar>
+                    )
+                  })
+                ) : (
+                  <div className="flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-primary/10 text-primary border-2 border-background">
+                    <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                )}
+                {extraFamilyMemberCount > 0 && (
+                  <div className="flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-muted text-muted-foreground text-xs sm:text-sm font-medium border-2 border-background">
+                    +{extraFamilyMemberCount}
+                  </div>
+                )}
               </div>
               <div className="text-center sm:text-left">
                 <p className="text-xl sm:text-2xl font-bold">{primaryFamily.members?.length || 0}</p>
