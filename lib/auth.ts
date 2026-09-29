@@ -146,24 +146,33 @@ export async function verifyRefreshToken(token: string): Promise<JWTPayload | nu
   }
 }
 
-export async function generateTokenPair(userId: string) {
+export async function generateTokenPair(
+  userId: string,
+  sessionMeta?: { userAgent?: string; ipAddress?: string }
+) {
   const [accessToken, refreshToken] = await Promise.all([
     generateAccessToken(userId),
     generateRefreshToken(userId),
   ])
 
-  // Store refresh token in database
+  // Store refresh token in database. userAgent/ipAddress are captured here
+  // (rather than looked up later) so the Settings > Security "Active
+  // Sessions" list can show each session's device without having to
+  // correlate against audit_logs, which isn't reliably 1:1 with a session
+  // (token refreshes don't log an audit event at all).
   const expiresAt = new Date()
   expiresAt.setDate(expiresAt.getDate() + 7)
 
   await sql`
-    INSERT INTO refresh_tokens (id, user_id, token, expires_at, created_at)
-    VALUES (${crypto.randomUUID()}, ${userId}, ${refreshToken}, ${expiresAt.toISOString()}, NOW())
+    INSERT INTO refresh_tokens (id, user_id, token, expires_at, created_at, user_agent, ip_address)
+    VALUES (
+      ${crypto.randomUUID()}, ${userId}, ${refreshToken}, ${expiresAt.toISOString()}, NOW(),
+      ${sessionMeta?.userAgent || null}, ${sessionMeta?.ipAddress || null}
+    )
   `
 
   return { accessToken, refreshToken }
 }
-
 // ============================================
 // Cookie Management
 // ============================================
