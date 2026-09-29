@@ -62,6 +62,7 @@ export type NotificationType =
   | 'TASK_ASSIGNED'
   | 'TASK_COMPLETED'
   | 'TASK_OVERDUE'
+  | 'TASK_COMMENT'
   | 'APPROVAL_REQUEST'
   | 'APPROVAL_RESPONSE'
   | 'SUBSCRIPTION_ALERT'
@@ -157,6 +158,75 @@ export async function notifyTaskCompleted(
     data: { taskId, familyId },
     sendSms: true // Will check user preferences before sending
   })
+}
+
+/**
+ * Notifies everyone "associated with" a task whenever a comment is posted
+ * or edited on it: the assigned user, plus every active parent/guardian in
+ * the family (so a parent who isn't the assignee still hears about it),
+ * excluding whoever wrote the comment. This mirrors the recipient logic
+ * already used for task status-change notifications in
+ * app/api/tasks/[taskId]/route.ts, just scoped to comments. Each recipient
+ * gets both an in-app notification and, if they have SMS enabled, a text
+ * (createNotification checks that preference before sending).
+ */
+export async function notifyTaskComment({
+  taskId,
+  familyId,
+  taskTitle,
+  assignedToId,
+  commenterId,
+  commenterName,
+  commentMessage,
+  action = 'added',
+}: {
+  taskId: string
+  familyId: string
+  taskTitle: string
+  assignedToId: string | null
+  commenterId: string
+  commenterName: string
+  commentMessage: string
+  action?: 'added' | 'updated'
+}): Promise<void> {
+  const recipientIds = new Set<string>()
+
+  if (assignedToId && assignedToId !== commenterId) {
+    recipientIds.add(assignedToId)
+  }
+
+  const guardians = await sql`
+    SELECT user_id FROM family_members
+    WHERE family_id = ${familyId}
+      AND is_active = true
+      AND role IN ('PARENT', 'GUARDIAN')
+      AND user_id IS NOT NULL
+  `
+  for (const guardian of guardians) {
+    if (guardian.user_id !== commenterId) {
+      recipientIds.add(guardian.user_id)
+    }
+  }
+
+  const excerpt = commentMessage.length > 120
+    ? `${commentMessage.slice(0, 117)}...`
+    : commentMessage
+
+  const title = action === 'updated'
+    ? `Comment updated on "${taskTitle}"`
+    : `New comment on "${taskTitle}"`
+  const verb = action === 'updated' ? 'edited a comment' : 'commented'
+
+  for (const userId of recipientIds) {
+    await createNotification({
+      userId,
+      type: 'TASK_COMMENT',
+      title,
+      body: `${commenterName} ${verb}: "${excerpt}"`,
+      data: { taskId, familyId },
+      sendSms: true // Will check the recipient's SMS preference before sending
+    })
+  }
 }
 
 export async function notifyFamilyAboutEvent(
