@@ -1,13 +1,32 @@
 /**
- * Push Notification Service using Firebase Cloud Messaging (FCM)
- * 
+ * Push Notification Service
+ *
+ * Delivers to browser push subscriptions using the standard Web Push
+ * protocol (VAPID + RFC 8291 encryption), implemented in
+ * lib/services/web-push-vapid.ts.
+ *
+ * Historical note: this used to send through Firebase Cloud Messaging's
+ * HTTP v1 API, passing the stored subscription JSON straight through as an
+ * FCM "registration token". That doesn't work — a PushManager subscription
+ * (the { endpoint, keys: { p256dh, auth } } object every browser produces)
+ * is not an FCM token, so FCM correctly rejected every send with a 404
+ * "NotRegistered" error. The client (hooks/use-push-notifications.ts) and
+ * the service worker (public/sw.js) were always built around the real Web
+ * Push standard, so this file now speaks that instead of FCM.
+ *
  * Required environment variables:
- * - FIREBASE_PROJECT_ID: Your Firebase project ID
- * - FIREBASE_CLIENT_EMAIL: Firebase service account email
- * - FIREBASE_PRIVATE_KEY: Firebase service account private key (base64 encoded)
+ * - NEXT_PUBLIC_VAPID_PUBLIC_KEY: VAPID public key (base64url, 65-byte
+ *   uncompressed P-256 point) — also used client-side as the
+ *   applicationServerKey passed to PushManager.subscribe().
+ * - VAPID_PRIVATE_KEY: matching VAPID private key (base64url, 32-byte
+ *   scalar). Must be generated together with the public key — see
+ *   lib/services/web-push-vapid.ts#generateVAPIDKeys.
+ * - VAPID_SUBJECT (optional): a mailto: or https: contact URL, defaults to
+ *   a generic support address.
  */
 
 import { sql } from '@/lib/db'
+import { sendWebPush, isVapidConfigured, type WebPushSubscription } from './web-push-vapid'
 
 interface PushPayload {
   title: string
@@ -22,173 +41,72 @@ interface PushResult {
   success: boolean
   messageId?: string
   error?: string
+  /** true when the push service says this subscription is permanently gone (404/410) */
+  gone?: boolean
 }
 
 /**
- * Check if Firebase is configured
+ * Check if push notifications are configured (VAPID keys present).
+ *
+ * Kept as `isFirebaseConfigured` for backward compatibility with existing
+ * call sites (lib/notifications.ts, lib/services/notification-dispatcher.ts,
+ * the admin notification-status routes) — it no longer has anything to do
+ * with Firebase, it just checks whether push delivery is possible at all.
  */
 export function isFirebaseConfigured(): boolean {
-  return !!(
-    process.env.FIREBASE_PROJECT_ID &&
-    process.env.FIREBASE_CLIENT_EMAIL &&
-    process.env.FIREBASE_PRIVATE_KEY
-  )
+  return isVapidConfigured()
 }
 
-/**
- * Format the private key to handle various storage formats
- */
-function formatPrivateKey(key: string): string {
-  let formattedKey = key
-
-  // Strip any wrapping double quotes that survived from a .env file
-  // (e.g. FIREBASE_PRIVATE_KEY="-----BEGIN...-----") plus any stray
-  // internal quotes, then turn literal "\n" sequences into real newlines.
-  formattedKey = formattedKey.replace(/^"|"$/g, '').replace(/"/g, '')
-  formattedKey = formattedKey.replace(/\\n/g, '\n')
-
-  // If the key doesn't start with the PEM header, it might be base64 encoded
-  if (!formattedKey.includes('-----BEGIN')) {
-    try {
-      formattedKey = Buffer.from(formattedKey, 'base64').toString('utf-8')
-    } catch {
-      // Not base64, use as is
-    }
-  }
-  
-  // Ensure proper PEM format with newlines
-  if (formattedKey.includes('-----BEGIN PRIVATE KEY-----') && !formattedKey.includes('\n')) {
-    formattedKey = formattedKey
-      .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
-      .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----')
-  }
-  
-  return formattedKey
-}
+/** Accurate alias for isFirebaseConfigured(); prefer this in new code. */
+export const isPushConfigured = isFirebaseConfigured
 
 /**
- * Get Firebase access token using service account
- */
-async function getFirebaseAccessToken(): Promise<string | null> {
-  if (!isFirebaseConfigured()) return null
-
-  try {
-    // Format the private key properly
-    const privateKey = formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY!)
-
-    // Create JWT for Google OAuth
-    const header = Buffer.from(JSON.stringify({
-      alg: 'RS256',
-      typ: 'JWT'
-    })).toString('base64url')
-
-    const now = Math.floor(Date.now() / 1000)
-    const payload = Buffer.from(JSON.stringify({
-      iss: process.env.FIREBASE_CLIENT_EMAIL,
-      sub: process.env.FIREBASE_CLIENT_EMAIL,
-      aud: 'https://oauth2.googleapis.com/token',
-      iat: now,
-      exp: now + 3600,
-      scope: 'https://www.googleapis.com/auth/firebase.messaging'
-    })).toString('base64url')
-
-    // Sign the JWT (simplified - in production use jose or similar)
-    const { createSign } = await import('crypto')
-    const sign = createSign('RSA-SHA256')
-    sign.update(`${header}.${payload}`)
-    const signature = sign.sign(privateKey, 'base64url')
-
-    const jwt = `${header}.${payload}.${signature}`
-
-    // Exchange JWT for access token
-    const response = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-        assertion: jwt
-      })
-    })
-
-    const data = await response.json()
-    return data.access_token || null
-  } catch (error) {
-    console.error('Firebase auth error:', error)
-    return null
-  }
-}
-
-/**
- * Send push notification via FCM
+ * Send a push notification to a single stored token.
+ *
+ * `token` is the JSON-stringified PushSubscription that the browser handed
+ * back from `registration.pushManager.subscribe()` (see
+ * hooks/use-push-notifications.ts) — not a raw string token.
  */
 export async function sendPushNotification(
   token: string,
   payload: PushPayload
 ): Promise<PushResult> {
-  if (!isFirebaseConfigured()) {
-    console.warn('Firebase not configured - Push not sent')
-    return { success: false, error: 'Firebase not configured' }
+  if (!isVapidConfigured()) {
+    console.warn('VAPID not configured - Push not sent')
+    return { success: false, error: 'VAPID not configured' }
   }
 
-  const accessToken = await getFirebaseAccessToken()
-  if (!accessToken) {
-    return { success: false, error: 'Failed to get Firebase access token' }
-  }
-
-  const projectId = process.env.FIREBASE_PROJECT_ID!
-
+  let subscription: WebPushSubscription
   try {
-    const response = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: {
-            token,
-            notification: {
-              title: payload.title,
-              body: payload.body,
-            },
-            webpush: {
-              notification: {
-                icon: payload.icon || '/icons/icon-192x192.png',
-                badge: payload.badge || '/icons/icon-72x72.png',
-              },
-              fcm_options: {
-                link: payload.clickAction || '/',
-              },
-            },
-            data: payload.data,
-          },
-        }),
-      }
-    )
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      console.error('FCM error:', data)
-      return { 
-        success: false, 
-        error: data.error?.message || 'Failed to send push notification' 
-      }
+    const parsed = JSON.parse(token)
+    if (!parsed?.endpoint || !parsed?.keys?.p256dh || !parsed?.keys?.auth) {
+      return { success: false, error: 'Stored token is not a valid push subscription' }
     }
-
-    return { 
-      success: true, 
-      messageId: data.name 
-    }
-  } catch (error) {
-    console.error('Push notification error:', error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    }
+    subscription = parsed
+  } catch {
+    return { success: false, error: 'Stored token is not valid JSON' }
   }
+
+  // public/sw.js's `push` event handler reads these fields flat off the top
+  // level of the decrypted payload (data.title, data.body, data.url,
+  // data.type, ...), not nested under a `data` sub-object — so whatever the
+  // caller passed in `payload.data` (e.g. { type, taskId, eventId }) gets
+  // spread in alongside title/body/url rather than wrapped.
+  const result = await sendWebPush(subscription, {
+    ...(payload.data || {}),
+    title: payload.title,
+    body: payload.body,
+    icon: payload.icon || '/icons/togethr-icon-blue.png',
+    badge: payload.badge || '/icons/togethr-icon-blue.png',
+    url: payload.clickAction || '/',
+  })
+
+  if (!result.success) {
+    console.error('Web push error:', result.error)
+    return { success: false, error: result.error, gone: result.gone }
+  }
+
+  return { success: true, messageId: `webpush-${Date.now()}` }
 }
 
 /**
@@ -218,10 +136,12 @@ export async function sendPushToUser(
       sent++
     } else {
       failed++
-      // If token is invalid, mark it as inactive
-      if (result.error?.includes('not registered') || result.error?.includes('invalid')) {
+      // Only deactivate on a permanent failure (404/410 - subscription is
+      // gone for good). A transient error (network blip, 429, 5xx from the
+      // push service) shouldn't retire a token that might work next time.
+      if (result.gone) {
         await sql`
-          UPDATE push_tokens SET is_active = false 
+          UPDATE push_tokens SET is_active = false
           WHERE token = ${token}
         `
       }
@@ -263,8 +183,8 @@ export async function registerPushToken(
     await sql`
       INSERT INTO push_tokens (user_id, token, platform, is_active, created_at, updated_at)
       VALUES (${userId}, ${token}, ${platform}, true, NOW(), NOW())
-      ON CONFLICT (token) 
-      DO UPDATE SET 
+      ON CONFLICT (token)
+      DO UPDATE SET
         user_id = ${userId},
         is_active = true,
         updated_at = NOW()
@@ -282,45 +202,12 @@ export async function registerPushToken(
 export async function unregisterPushToken(token: string): Promise<boolean> {
   try {
     await sql`
-      UPDATE push_tokens SET is_active = false 
+      UPDATE push_tokens SET is_active = false
       WHERE token = ${token}
     `
     return true
   } catch (error) {
     console.error('Failed to unregister push token:', error)
     return false
-  }
-}
-
-/**
- * Send push notification using Web Push API (fallback for browsers without FCM)
- */
-export async function sendWebPush(
-  subscription: {
-    endpoint: string
-    keys: { p256dh: string; auth: string }
-  },
-  payload: PushPayload
-): Promise<PushResult> {
-  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY
-  
-  if (!vapidPublicKey || !vapidPrivateKey) {
-    console.warn('VAPID keys not configured - Web Push not sent')
-    return { success: false, error: 'VAPID keys not configured' }
-  }
-
-  try {
-    // Web Push implementation would go here
-    // This requires the 'web-push' npm package
-    // For now, we'll use FCM which handles web push internally
-    console.log('Web Push would be sent to:', subscription.endpoint)
-    return { success: true, messageId: 'web-push-' + Date.now() }
-  } catch (error) {
-    console.error('Web push error:', error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    }
   }
 }

@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       case 'push': {
         if (!isFirebaseConfigured()) {
           return NextResponse.json(
-            { error: 'Push service not configured. Add Firebase environment variables.' },
+            { error: 'Push service not configured. Add VAPID_PRIVATE_KEY and NEXT_PUBLIC_VAPID_PUBLIC_KEY environment variables.' },
             { status: 400 }
           )
         }

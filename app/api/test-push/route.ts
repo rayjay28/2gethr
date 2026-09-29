@@ -1,60 +1,25 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getAdminFromToken } from '@/lib/admin-auth'
-
-// Initialize Firebase Admin
-import admin from 'firebase-admin'
+import { sendWebPush, isVapidConfigured } from '@/lib/services/web-push-vapid'
 
 // SECURITY FIX: this file previously contained a live Firebase service-account
 // private key hardcoded in source ("temporarily, due to env var caching
 // issues"). That key must be treated as compromised — rotate/revoke it in the
-// Firebase console (IAM & Admin > Service Accounts) immediately, then supply
-// the new key only via the FIREBASE_PRIVATE_KEY environment variable.
+// Firebase console (IAM & Admin > Service Accounts) immediately.
 // This route also had no authentication at all: GET leaked every user's
 // email/name/device list, and POST could push a notification to any or all
 // users. Both now require a logged-in admin.
-function formatPrivateKey(key: string): string {
-  // Strip any wrapping/stray double quotes that survived from a .env file,
-  // then turn literal "\n" sequences into real newlines.
-  let formattedKey = key.replace(/^"|"$/g, '').replace(/"/g, '')
-  formattedKey = formattedKey.replace(/\\n/g, '\n')
-
-  if (!formattedKey.includes('-----BEGIN PRIVATE KEY-----')) {
-    throw new Error(
-      'Invalid FIREBASE_PRIVATE_KEY format. The key must start with "-----BEGIN PRIVATE KEY-----". ' +
-      'Please copy the entire private_key value from your Firebase service account JSON file.'
-    )
-  }
-
-  return formattedKey
-}
-
-function getFirebaseApp() {
-  const projectId = process.env.FIREBASE_PROJECT_ID
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL
-  const rawKey = process.env.FIREBASE_PRIVATE_KEY
-
-  if (!projectId || !clientEmail || !rawKey) {
-    throw new Error(
-      'Firebase is not configured. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, ' +
-      'and FIREBASE_PRIVATE_KEY in the environment.'
-    )
-  }
-
-  const privateKey = formatPrivateKey(rawKey)
-
-  if (admin.apps.length > 0) {
-    admin.apps.forEach(app => app?.delete())
-  }
-
-  return admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId,
-      clientEmail,
-      privateKey,
-    }),
-  })
-}
+//
+// CORRECTNESS FIX: this route used to send via Firebase Admin's
+// messaging().send() API, passing the stored push_tokens row straight
+// through as an FCM registration token. That token is actually a raw
+// PushSubscription (endpoint + keys) from the browser's PushManager, not an
+// FCM token, so every send failed with a 404 "NotRegistered" error even
+// though the subscription itself was valid. It now delivers via the real
+// Web Push protocol (VAPID + RFC 8291 encryption, see
+// lib/services/web-push-vapid.ts) — the same thing lib/services/push.ts
+// uses, and what the client and service worker were always built for.
 
 async function requireAdmin(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -68,15 +33,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
-    // Check Firebase config
-    const projectId = process.env.FIREBASE_PROJECT_ID
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY
-
+    // Check Web Push (VAPID) config
     const configStatus = {
-      FIREBASE_PROJECT_ID: projectId ? `✓ ${projectId}` : '✗ Missing',
-      FIREBASE_CLIENT_EMAIL: clientEmail ? `✓ ${clientEmail.substring(0, 20)}...` : '✗ Missing',
-      FIREBASE_PRIVATE_KEY: privateKey ? '✓ Set' : '✗ Missing',
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ? '✓ Set' : '✗ Missing',
       VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY ? '✓ Set' : '✗ Missing',
     }
@@ -90,19 +48,14 @@ export async function GET(request: Request) {
       LIMIT 5
     `
 
-    // Try to initialize Firebase
-    let firebaseStatus = 'Not initialized'
-    try {
-      getFirebaseApp()
-      firebaseStatus = '✓ Initialized successfully'
-    } catch (error) {
-      firebaseStatus = `✗ Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-    }
+    const webPushStatus = isVapidConfigured()
+      ? '✓ VAPID keys configured'
+      : '✗ Missing VAPID_PRIVATE_KEY and/or NEXT_PUBLIC_VAPID_PUBLIC_KEY'
 
     return NextResponse.json({
       success: true,
       config: configStatus,
-      firebaseStatus,
+      webPushStatus,
       registeredDevices: subscriptions.length,
       devices: subscriptions.map(s => ({
         userId: s.user_id,
@@ -126,9 +79,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
-    // Get Firebase app
-    const app = getFirebaseApp()
-    const messaging = admin.messaging(app)
+    if (!isVapidConfigured()) {
+      return NextResponse.json({
+        success: false,
+        error: 'Web Push is not configured. Set VAPID_PRIVATE_KEY and NEXT_PUBLIC_VAPID_PUBLIC_KEY in the environment.'
+      }, { status: 400 })
+    }
 
     // Parse request body for specific emails
     let targetEmails: string[] = []
@@ -168,32 +124,29 @@ export async function POST(request: Request) {
 
     for (const sub of subscriptions) {
       try {
-        // Send test notification
-        const message = {
-          token: sub.token,
-          notification: {
-            title: 'Togethr Test Notification',
-            body: `Hello ${sub.first_name || 'there'}! Push notifications are working correctly.`,
-          },
-          data: {
-            type: 'TEST',
-            timestamp: new Date().toISOString(),
-          },
-          webpush: {
-            notification: {
-              icon: '/icon-192.png',
-              badge: '/icon-192.png',
-              vibrate: [200, 100, 200],
-            },
-          },
+        const subscription = JSON.parse(sub.token)
+        if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+          results.push({ email: sub.email, status: 'failed', error: 'Stored token is not a valid push subscription' })
+          continue
         }
 
-        const response = await messaging.send(message)
-        results.push({
-          email: sub.email,
-          status: 'sent',
-          messageId: response
+        const result = await sendWebPush(subscription, {
+          title: 'Togethr Test Notification',
+          body: `Hello ${sub.first_name || 'there'}! Push notifications are working correctly.`,
+          icon: '/icons/togethr-icon-blue.png',
+          badge: '/icons/togethr-icon-blue.png',
+          type: 'TEST',
+          timestamp: new Date().toISOString(),
         })
+
+        if (result.success) {
+          results.push({ email: sub.email, status: 'sent' })
+        } else {
+          results.push({ email: sub.email, status: 'failed', error: result.error })
+          if (result.gone) {
+            await sql`UPDATE push_tokens SET is_active = false WHERE token = ${sub.token}`
+          }
+        }
       } catch (error) {
         results.push({
           email: sub.email,

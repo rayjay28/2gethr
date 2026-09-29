@@ -21,10 +21,8 @@ export async function GET() {
         lastTestResult: null
       },
       push: {
-        // Hardcoded as true since Firebase credentials are embedded in test-push route
-        // TODO: Revert to isFirebaseConfigured() when env vars work properly
-        configured: true,
-        provider: 'Firebase Cloud Messaging',
+        configured: isFirebaseConfigured(),
+        provider: 'Web Push (VAPID)',
         lastTested: null,
         lastTestResult: null
       }

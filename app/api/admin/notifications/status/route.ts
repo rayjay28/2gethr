@@ -27,7 +27,7 @@ export async function GET(request: Request) {
       },
       push: {
         configured: isFirebaseConfigured(),
-        provider: 'Firebase Cloud Messaging',
+        provider: 'Web Push (VAPID)',
         lastTested: null,
         lastTestResult: null
       }
