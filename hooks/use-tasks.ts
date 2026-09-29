@@ -156,7 +156,26 @@ export async function addTaskComment(taskId: string, content: string) {
     const data = await res.json()
     throw new Error(data.error || 'Failed to add comment')
   }
-  
+
+  return res.json()
+}
+
+export async function updateTaskComment(taskId: string, commentId: string, content: string) {
+  const token = getAccessToken()
+  const res = await fetch(`/api/tasks/${taskId}/comments`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ commentId, content }),
+  })
+
+  if (!res.ok) {
+    const data = await res.json()
+    throw new Error(data.error || 'Failed to update comment')
+  }
+
   return res.json()
 }
 
