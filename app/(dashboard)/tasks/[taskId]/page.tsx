@@ -2,7 +2,8 @@
 
 import { use, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useTask, updateTask, deleteTask, addTaskComment } from '@/hooks/use-tasks'
+import { useAuth } from '@/hooks/use-auth'
+import { useTask, updateTask, deleteTask, addTaskComment, updateTaskComment } from '@/hooks/use-tasks'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,10 +35,14 @@ import {
 export default function TaskDetailPage({ params }: { params: Promise<{ taskId: string }> }) {
   const { taskId } = use(params)
   const router = useRouter()
+  const { user: currentUser } = useAuth()
   const { task, isLoading, mutate } = useTask(taskId)
   const [processing, setProcessing] = useState(false)
   const [comment, setComment] = useState('')
   const [submittingComment, setSubmittingComment] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editCommentContent, setEditCommentContent] = useState('')
+  const [savingCommentEdit, setSavingCommentEdit] = useState(false)
 
   const handleAction = async (action: 'start' | 'complete' | 'approve' | 'reject' | 'pending' | 'hold' | 'cancel') => {
     setProcessing(true)
@@ -99,6 +104,32 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
       toast.error(error instanceof Error ? error.message : 'Failed to add comment')
     } finally {
       setSubmittingComment(false)
+    }
+  }
+
+  const startEditingComment = (commentId: string, currentMessage: string) => {
+    setEditingCommentId(commentId)
+    setEditCommentContent(currentMessage)
+  }
+
+  const cancelEditingComment = () => {
+    setEditingCommentId(null)
+    setEditCommentContent('')
+  }
+
+  const handleSaveCommentEdit = async (commentId: string) => {
+    if (!editCommentContent.trim()) return
+
+    setSavingCommentEdit(true)
+    try {
+      await updateTaskComment(taskId, commentId, editCommentContent.trim())
+      cancelEditingComment()
+      mutate()
+      toast.success('Comment updated')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update comment')
+    } finally {
+      setSavingCommentEdit(false)
     }
   }
 
@@ -402,15 +433,58 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
 
           {task.comments && task.comments.length > 0 ? (
             <div className="space-y-3">
-              {task.comments.map((c: { id: string; first_name: string; last_name: string; message: string; created_at: string }) => (
+              {task.comments.map((c: { id: string; user_id: string; first_name: string; last_name: string; message: string; created_at: string; updated_at?: string | null }) => (
                 <div key={c.id} className="p-3 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-sm">{c.first_name} {c.last_name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {format(parseISO(c.created_at), 'MMM d, h:mm a')}
-                    </span>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{c.first_name} {c.last_name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {format(parseISO(c.created_at), 'MMM d, h:mm a')}
+                        {c.updated_at && ' (edited)'}
+                      </span>
+                    </div>
+                    {/* Only the comment's own author can edit it, matching the
+                        PATCH endpoint's ownership check. */}
+                    {currentUser?.id === c.user_id && editingCommentId !== c.id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-muted-foreground"
+                        onClick={() => startEditingComment(c.id, c.message)}
+                      >
+                        Edit
+                      </Button>
+                    )}
                   </div>
-                  <p className="text-sm text-foreground">{c.message}</p>
+                  {editingCommentId === c.id ? (
+                    <div className="space-y-2">
+                      <Textarea
+                        value={editCommentContent}
+                        onChange={(e) => setEditCommentContent(e.target.value)}
+                        className="text-sm"
+                        rows={2}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          disabled={savingCommentEdit || !editCommentContent.trim()}
+                          onClick={() => handleSaveCommentEdit(c.id)}
+                        >
+                          {savingCommentEdit ? <Spinner className="w-4 h-4" /> : 'Save'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={savingCommentEdit}
+                          onClick={cancelEditingComment}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-foreground">{c.message}</p>
+                  )}
                 </div>
               ))}
             </div>
