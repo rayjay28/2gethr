@@ -5,6 +5,7 @@ import { useFamilies } from '@/hooks/use-family'
 import { useTasks, updateTask } from '@/hooks/use-tasks'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Empty } from '@/components/ui/empty'
@@ -12,7 +13,6 @@ import { Spinner } from '@/components/ui/spinner'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ListTodo } from 'lucide-react'
 import { Plus } from 'lucide-react'
-import { User } from 'lucide-react'
 import { Calendar } from 'lucide-react'
 import { Check } from 'lucide-react'
 import { X } from 'lucide-react'
@@ -268,12 +268,24 @@ export default function TasksPage() {
           ) : (
             <div className="space-y-3">
               {tasks.map((task) => {
-                const assigneeName = task.child_display_name 
+                const assigneeName = task.child_display_name
                   ? task.child_display_name
-                  : task.assignee_first_name 
+                  : task.assignee_first_name
                     ? `${task.assignee_first_name} ${task.assignee_last_name || ''}`.trim()
                     : 'Unassigned'
-                
+
+                // Prefer the child's own avatar, then the assigned family member's
+                // profile photo (served through the private-blob proxy endpoint),
+                // falling back to initials when no picture is set.
+                const assigneeAvatarSrc = task.child_avatar_url
+                  ? task.child_avatar_url
+                  : task.assigned_to_id && task.assignee_profile_photo_path
+                    ? `/api/avatar/${task.assigned_to_id}`
+                    : undefined
+                const assigneeInitials = assigneeName === 'Unassigned'
+                  ? '?'
+                  : assigneeName.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase()).join('') || '?'
+
                 const isOverdue = task.due_date && isPast(parseISO(task.due_date)) && task.status !== 'completed'
 
                 return (
@@ -299,8 +311,13 @@ export default function TasksPage() {
                           <p className="font-medium text-foreground truncate">{task.title}</p>
                         </Link>
                         <div className="flex items-center gap-3 mt-1 flex-wrap">
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <User className="w-3 h-3" />
+                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Avatar className="w-4 h-4">
+                              {assigneeAvatarSrc && <AvatarImage src={assigneeAvatarSrc} alt={assigneeName} />}
+                              <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+                                {assigneeInitials}
+                              </AvatarFallback>
+                            </Avatar>
                             {assigneeName}
                           </span>
                           {task.due_date && (
