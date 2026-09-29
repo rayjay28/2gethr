@@ -16,6 +16,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { TwoFactorSettings } from '@/components/two-factor-settings'
+import { ActiveSessions } from '@/components/active-sessions'
 import { toast } from 'sonner'
 import { Bell, Lock, Shield, Globe, User, Camera, Trash2, Phone, Smartphone, Download, RotateCcw, Sun, Moon, RefreshCw } from 'lucide-react'
 import { useTheme } from 'next-themes'
@@ -715,14 +716,8 @@ export default function SettingsPage() {
             </div>
             <Separator />
             <TwoFactorSettings />
-            <Separator />
-            <div className="flex items-center justify-between">
-              <div>
-                <Label>Active Sessions</Label>
-                <p className="text-sm text-muted-foreground">Manage your active login sessions</p>
-              </div>
-              <Button variant="outline">View Sessions</Button>
-            </div>
+          <Separator />
+          <ActiveSessions />
           </CardContent>
         </Card>
 
