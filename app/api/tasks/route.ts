@@ -46,7 +46,8 @@ export async function GET(request: NextRequest) {
         SELECT t.*, 
                u_creator.first_name as creator_first_name, u_creator.last_name as creator_last_name,
                u_assignee.first_name as assignee_first_name, u_assignee.last_name as assignee_last_name,
-               cp.display_name as child_display_name,
+               u_assignee.profile_photo_path as assignee_profile_photo_path,
+               cp.display_name as child_display_name, cp.avatar_url as child_avatar_url,
                f.name as family_name
         FROM tasks t
         LEFT JOIN users u_creator ON t.created_by_id = u_creator.id
@@ -63,7 +64,8 @@ export async function GET(request: NextRequest) {
         SELECT t.*, 
                u_creator.first_name as creator_first_name, u_creator.last_name as creator_last_name,
                u_assignee.first_name as assignee_first_name, u_assignee.last_name as assignee_last_name,
-               cp.display_name as child_display_name,
+               u_assignee.profile_photo_path as assignee_profile_photo_path,
+               cp.display_name as child_display_name, cp.avatar_url as child_avatar_url,
                f.name as family_name
         FROM tasks t
         LEFT JOIN users u_creator ON t.created_by_id = u_creator.id
@@ -79,7 +81,8 @@ export async function GET(request: NextRequest) {
         SELECT t.*, 
                u_creator.first_name as creator_first_name, u_creator.last_name as creator_last_name,
                u_assignee.first_name as assignee_first_name, u_assignee.last_name as assignee_last_name,
-               cp.display_name as child_display_name,
+               u_assignee.profile_photo_path as assignee_profile_photo_path,
+               cp.display_name as child_display_name, cp.avatar_url as child_avatar_url,
                f.name as family_name
         FROM tasks t
         LEFT JOIN users u_creator ON t.created_by_id = u_creator.id
@@ -95,7 +98,8 @@ export async function GET(request: NextRequest) {
         SELECT t.*, 
                u_creator.first_name as creator_first_name, u_creator.last_name as creator_last_name,
                u_assignee.first_name as assignee_first_name, u_assignee.last_name as assignee_last_name,
-               cp.display_name as child_display_name,
+               u_assignee.profile_photo_path as assignee_profile_photo_path,
+               cp.display_name as child_display_name, cp.avatar_url as child_avatar_url,
                f.name as family_name
         FROM tasks t
         LEFT JOIN users u_creator ON t.created_by_id = u_creator.id
