@@ -42,7 +42,13 @@ export async function GET(
         status: 304,
         headers: {
           ETag: result.blob.etag,
-          "Cache-Control": "public, max-age=3600", // Cache for 1 hour
+          // "public" would let shared/CDN caches keep serving this response
+          // under the stable /api/avatar/{userId} URL even after the user
+          // uploads a new photo (the pathname/etag changes, but nothing
+          // busts the old cached entry). Scope caching to the browser only,
+          // per Vercel's private-blob-serving guidance, so a new upload is
+          // reflected as soon as the browser revalidates.
+          "Cache-Control": "private, no-cache",
         },
       })
     }
@@ -51,7 +57,7 @@ export async function GET(
       headers: {
         "Content-Type": result.blob.contentType,
         ETag: result.blob.etag,
-        "Cache-Control": "public, max-age=3600", // Cache for 1 hour
+        "Cache-Control": "private, no-cache",
       },
     })
   } catch (error) {
