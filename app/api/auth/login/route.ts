@@ -73,15 +73,17 @@ export async function POST(request: NextRequest) {
     `
 
     // Generate tokens
-    const tokens = await generateTokenPair(user.id)
+    const ipAddress = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined
+    const userAgent = request.headers.get("user-agent") || undefined
+    const tokens = await generateTokenPair(user.id, { ipAddress, userAgent })
 
     // Get full user with family info
     const userWithFamily = await getUserWithFamily(user.id)
 
     // Audit log
     await logAuditEvent(user.id, "LOGIN", "user", user.id, {
-      ipAddress: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined,
-      userAgent: request.headers.get("user-agent") || undefined,
+      ipAddress,
+      userAgent,
     })
 
     // Create response - include both tokens for localStorage-based auth
