@@ -45,13 +45,15 @@ export async function POST(request: NextRequest) {
       WHERE id = ${payload.userId}
     `
 
-    const tokens = await generateTokenPair(payload.userId)
+    const ipAddress = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined
+    const userAgent = request.headers.get("user-agent") || undefined
+    const tokens = await generateTokenPair(payload.userId, { ipAddress, userAgent })
     const userWithFamily = await getUserWithFamily(payload.userId)
 
     await logAuditEvent(payload.userId, "LOGIN", "user", payload.userId, {
       metadata: { twoFactor: true },
-      ipAddress: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined,
-      userAgent: request.headers.get("user-agent") || undefined,
+      ipAddress,
+      userAgent,
     })
 
     const response = NextResponse.json({
