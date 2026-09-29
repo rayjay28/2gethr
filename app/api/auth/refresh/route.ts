@@ -51,8 +51,13 @@ export async function POST(request: NextRequest) {
       WHERE token = ${refreshToken}
     `
 
-    // Generate new tokens
-    const newTokens = await generateTokenPair(payload.userId)
+    // Generate new tokens. Carry the device info forward so a refreshed
+    // session still shows up correctly in Settings > Security's session
+    // list rather than losing its device/IP the first time the token rotates.
+    const newTokens = await generateTokenPair(payload.userId, {
+      ipAddress: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined,
+      userAgent: request.headers.get("user-agent") || undefined,
+    })
 
     // Get user data
     const user = await getUserWithFamily(payload.userId)
