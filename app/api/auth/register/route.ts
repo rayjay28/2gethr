@@ -109,13 +109,15 @@ export async function POST(request: NextRequest) {
     await notifyAdmin(signupNotice.subject, signupNotice.html, signupNotice.text)
 
     // Generate tokens
-    const tokens = await generateTokenPair(userId)
+    const ipAddress = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined
+    const userAgent = request.headers.get("user-agent") || undefined
+    const tokens = await generateTokenPair(userId, { ipAddress, userAgent })
 
     // Audit log
     await logAuditEvent(userId, "CREATE", "user", userId, {
       newValue: { email: validatedData.email, firstName: validatedData.firstName },
-      ipAddress: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined,
-      userAgent: request.headers.get("user-agent") || undefined,
+      ipAddress,
+      userAgent,
     })
 
     // Create response - include tokens for localStorage-based auth
