@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import { getUserFromRequest, checkFamilySubscription, logAuditEvent } from "@/lib/auth"
 import { z } from "zod"
+import { sendSMS, SMS_TEMPLATES, isTwilioConfigured } from "@/lib/services/sms"
+import { sendEmail, EMAIL_TEMPLATES, isResendConfigured } from "@/lib/services/email"
 
 const locationPingSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -327,31 +329,87 @@ async function createGeofenceNotification(
   const users = await sql`SELECT first_name FROM users WHERE id = ${userId}`
   const userName = users[0]?.first_name || "Family member"
 
-  // Get parents/guardians/admins to notify (not just PARENT — a GUARDIAN or
-  // ADMIN can already view this child's location and settings, so they
-  // should get the same arrival/departure alerts)
-  const parents = await sql`
-    SELECT user_id FROM family_members
-    WHERE family_id = ${familyId} AND role IN ('PARENT', 'GUARDIAN', 'ADMIN') AND is_active = true AND user_id != ${userId}
+  // Get parents/guardians to notify (not just PARENT — a GUARDIAN can already
+  // view this child's location and settings, so they should get the same
+  // arrival/departure alerts), plus what we need to reach them on their
+  // other channels (email/phone + their own notification toggles).
+  //
+  // NOTE: the family_role enum only defines PARENT, GUARDIAN, CHILD — there
+  // is no ADMIN value. This used to also filter on role IN (..., 'ADMIN'),
+  // which is harmless in a JS .includes() check elsewhere but fatal here:
+  // comparing an enum column against a SQL literal forces Postgres to cast
+  // the literal to the enum type, and 'ADMIN' has no such value, so the
+  // query threw "invalid input value for enum family_role: ADMIN" on every
+  // single arrival/departure — silently killing all geofence notifications
+  // (in-app included) since the throw happened before any INSERT ran.
+  const recipients = await sql`
+    SELECT fm.user_id, u.email, u.phone, rs.email_enabled, rs.sms_enabled
+    FROM family_members fm
+    JOIN users u ON u.id = fm.user_id
+    LEFT JOIN reminder_settings rs ON rs.user_id = fm.user_id
+    WHERE fm.family_id = ${familyId}
+      AND fm.role IN ('PARENT', 'GUARDIAN')
+      AND fm.is_active = true
+      AND fm.user_id != ${userId}
   `
 
-  for (const parent of parents) {
+  const actionVerb = eventType === "ARRIVAL" ? "arrived" : "left"
+  const title = eventType === "ARRIVAL" ? `${userName} arrived` : `${userName} left`
+  const body =
+    eventType === "ARRIVAL"
+      ? `${userName} has arrived at ${placeName}`
+      : `${userName} has left ${placeName}`
+  const timeStr = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
+
+  for (const recipient of recipients) {
     const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
     await sql`
       INSERT INTO notifications (id, user_id, type, title, body, data, created_at)
       VALUES (
         ${notifId},
-        ${parent.user_id},
+        ${recipient.user_id},
         'LOCATION_ALERT',
-        ${eventType === "ARRIVAL" ? `${userName} arrived` : `${userName} left`},
-        ${eventType === "ARRIVAL" 
-          ? `${userName} has arrived at ${placeName}` 
-          : `${userName} has left ${placeName}`
-        },
+        ${title},
+        ${body},
         ${JSON.stringify({ userId, placeName, eventType })}::jsonb,
         NOW()
       )
     `
+
+    // Email — same default as the Settings page (on unless the recipient
+    // has explicitly turned it off there). A failure here must never take
+    // down the location ping that triggered it, so it's caught and logged,
+    // not thrown.
+    const emailEnabled = recipient.email_enabled ?? true
+    if (emailEnabled && recipient.email && isResendConfigured()) {
+      try {
+        const content = EMAIL_TEMPLATES.GEOFENCE_ALERT(userName, actionVerb, placeName, timeStr)
+        const result = await sendEmail({ to: recipient.email, ...content })
+        if (!result.success) {
+          console.error("Geofence email failed:", result.error)
+        }
+      } catch (err) {
+        console.error("Geofence email threw:", err)
+      }
+    }
+
+    // SMS — same default as the Settings page (off until the recipient sets
+    // a phone number and flips "SMS Notifications" on there).
+    const smsEnabled = recipient.sms_enabled === true
+    if (smsEnabled && recipient.phone && isTwilioConfigured()) {
+      try {
+        const smsBody =
+          eventType === "ARRIVAL"
+            ? SMS_TEMPLATES.GEOFENCE_ARRIVAL(userName, placeName)
+            : SMS_TEMPLATES.GEOFENCE_DEPARTURE(userName, placeName)
+        const result = await sendSMS({ to: recipient.phone, body: smsBody })
+        if (!result.success) {
+          console.error("Geofence SMS failed:", result.error)
+        }
+      } catch (err) {
+        console.error("Geofence SMS threw:", err)
+      }
+    }
   }
 }
 
