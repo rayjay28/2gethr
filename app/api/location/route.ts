@@ -219,7 +219,7 @@ export async function POST(request: NextRequest) {
 
     // Check geofences if enabled (Premium feature)
     if (subscription.features.geofencing) {
-      await checkGeofences(user.id, setting.family_id, validatedData.latitude, validatedData.longitude)
+      await checkGeofences(user.id, setting.family_id, validatedData.latitude, validatedData.longitude, validatedData.accuracy)
     }
 
     return NextResponse.json({
@@ -242,7 +242,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function checkGeofences(userId: string, familyId: string, latitude: number, longitude: number) {
+async function checkGeofences(
+  userId: string,
+  familyId: string,
+  latitude: number,
+  longitude: number,
+  accuracy?: number | null
+) {
   // Get all geofence-enabled places for this family
   const places = await sql`
     SELECT id, name, latitude, longitude, radius, alert_on_arrival, alert_on_departure
@@ -255,7 +261,6 @@ async function checkGeofences(userId: string, familyId: string, latitude: number
       latitude, longitude,
       place.latitude, place.longitude
     )
-    const isInside = distance <= place.radius
 
     // Get last geofence event for this place/user
     const lastEvents = await sql`
@@ -264,8 +269,28 @@ async function checkGeofences(userId: string, familyId: string, latitude: number
       ORDER BY timestamp DESC
       LIMIT 1
     `
-
     const wasInside = lastEvents.length > 0 && lastEvents[0].event_type === "ARRIVAL"
+
+    // GPS is noisy right at a boundary. A device reporting ±accuracy meters
+    // can flip a hard "distance <= radius" check back and forth on every
+    // ping even while the person hasn't moved, spamming arrival/departure
+    // alerts. Two guards against that:
+    //
+    // 1. Hysteresis: once inside, require crossing further out (radius +
+    //    buffer) before counting as "left", and vice versa. This makes the
+    //    boundary "sticky" instead of a single hard line.
+    // 2. Accuracy gating: if the ping's own reported accuracy radius is too
+    //    large relative to the geofence radius, the fix isn't precise enough
+    //    to trust a transition either way, so skip evaluating this place for
+    //    this ping rather than risk a false alert.
+    const hysteresisBuffer = Math.max(20, place.radius * 0.15)
+    const threshold = wasInside ? place.radius + hysteresisBuffer : place.radius
+    const isInside = distance <= threshold
+
+    if (accuracy && accuracy > place.radius * 1.5) {
+      // Too imprecise to trust either way — don't flip state on this ping.
+      continue
+    }
 
     // Detect arrival or departure
     if (isInside && !wasInside && place.alert_on_arrival) {
@@ -302,10 +327,12 @@ async function createGeofenceNotification(
   const users = await sql`SELECT first_name FROM users WHERE id = ${userId}`
   const userName = users[0]?.first_name || "Family member"
 
-  // Get parents to notify
+  // Get parents/guardians/admins to notify (not just PARENT — a GUARDIAN or
+  // ADMIN can already view this child's location and settings, so they
+  // should get the same arrival/departure alerts)
   const parents = await sql`
-    SELECT user_id FROM family_members 
-    WHERE family_id = ${familyId} AND role = 'PARENT' AND is_active = true AND user_id != ${userId}
+    SELECT user_id FROM family_members
+    WHERE family_id = ${familyId} AND role IN ('PARENT', 'GUARDIAN', 'ADMIN') AND is_active = true AND user_id != ${userId}
   `
 
   for (const parent of parents) {

@@ -23,8 +23,8 @@ import {
 } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
-import { 
-  MapPin, 
+import {
+  MapPin,
   Plus,
   Home,
   Building,
@@ -36,7 +36,10 @@ import {
   Bell,
   BellOff,
   Crown,
-  Star
+  Star,
+  Locate,
+  Search,
+  CheckCircle2
 } from 'lucide-react'
 import { useFavorites } from '@/components/favorites-dropdown'
 import useSWR from 'swr'
@@ -102,12 +105,14 @@ export default function PlacesPage() {
   const [editPlaceOpen, setEditPlaceOpen] = useState(false)
   const [isAdding, setIsAdding] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [isLocating, setIsLocating] = useState(false)
   const [editingPlace, setEditingPlace] = useState<SavedPlace | null>(null)
   const [newPlace, setNewPlace] = useState({
     name: '',
     address: '',
-    latitude: 0,
-    longitude: 0,
+    latitude: null as number | null,
+    longitude: null as number | null,
+    locationLabel: '',
     radius: 100,
     geofenceEnabled: false,
     alertOnArrival: true,
@@ -118,6 +123,9 @@ export default function PlacesPage() {
   const [editPlace, setEditPlace] = useState({
     name: '',
     address: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
+    locationLabel: '',
     radius: 100,
     geofenceEnabled: false,
     alertOnArrival: true,
@@ -125,6 +133,63 @@ export default function PlacesPage() {
     icon: 'default',
     color: '#3B82F6',
   })
+
+  const geocodeAddress = async (address: string, target: 'new' | 'edit') => {
+    if (!address.trim()) {
+      toast.error('Enter an address first')
+      return
+    }
+    setIsLocating(true)
+    try {
+      const token = getAccessToken()
+      const res = await fetch(`/api/places/geocode?address=${encodeURIComponent(address)}`, {
+        credentials: 'include',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      })
+      const data = await res.json()
+      if (data.success) {
+        const update = {
+          latitude: data.data.latitude,
+          longitude: data.data.longitude,
+          locationLabel: `Found: ${data.data.formattedAddress}`,
+        }
+        if (target === 'new') setNewPlace((p) => ({ ...p, ...update }))
+        else setEditPlace((p) => ({ ...p, ...update }))
+        toast.success('Location found')
+      } else {
+        toast.error(data.error || 'Could not find that address')
+      }
+    } catch {
+      toast.error('Could not look up that address')
+    }
+    setIsLocating(false)
+  }
+
+  const useCurrentLocation = (target: 'new' | 'edit') => {
+    if (!navigator.geolocation) {
+      toast.error('Your browser does not support location access')
+      return
+    }
+    setIsLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const update = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          locationLabel: `Using your current location (±${Math.round(position.coords.accuracy)}m accuracy)`,
+        }
+        if (target === 'new') setNewPlace((p) => ({ ...p, ...update }))
+        else setEditPlace((p) => ({ ...p, ...update }))
+        setIsLocating(false)
+        toast.success('Current location set')
+      },
+      (err) => {
+        setIsLocating(false)
+        toast.error(err.message || 'Could not get your current location')
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
 
   const handleAddPlace = async () => {
     if (!newPlace.name.trim()) {
@@ -137,16 +202,17 @@ export default function PlacesPage() {
       return
     }
 
-    // For demo, use random coordinates if not set
-    const lat = newPlace.latitude || 37.7749 + (Math.random() - 0.5) * 0.1
-    const lng = newPlace.longitude || -122.4194 + (Math.random() - 0.5) * 0.1
+    if (newPlace.latitude === null || newPlace.longitude === null) {
+      toast.error('Set this place\'s location first — search the address or use your current location')
+      return
+    }
 
     setIsAdding(true)
     try {
       const token = getAccessToken()
       const res = await fetch('/api/places', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
@@ -155,8 +221,8 @@ export default function PlacesPage() {
           familyId: primaryFamily.id,
           name: newPlace.name,
           address: newPlace.address || null,
-          latitude: lat,
-          longitude: lng,
+          latitude: newPlace.latitude,
+          longitude: newPlace.longitude,
           radius: newPlace.radius,
           geofenceEnabled: newPlace.geofenceEnabled,
           alertOnArrival: newPlace.alertOnArrival,
@@ -174,8 +240,9 @@ export default function PlacesPage() {
         setNewPlace({
           name: '',
           address: '',
-          latitude: 0,
-          longitude: 0,
+          latitude: null,
+          longitude: null,
+          locationLabel: '',
           radius: 100,
           geofenceEnabled: false,
           alertOnArrival: true,
@@ -198,6 +265,9 @@ export default function PlacesPage() {
     setEditPlace({
       name: place.name,
       address: place.address || '',
+      latitude: place.latitude,
+      longitude: place.longitude,
+      locationLabel: `Current: ${place.latitude.toFixed(5)}, ${place.longitude.toFixed(5)}`,
       radius: place.radius,
       geofenceEnabled: place.geofenceEnabled,
       alertOnArrival: place.alertOnArrival,
@@ -227,6 +297,8 @@ export default function PlacesPage() {
         body: JSON.stringify({
           name: editPlace.name,
           address: editPlace.address || null,
+          ...(editPlace.latitude !== null ? { latitude: editPlace.latitude } : {}),
+          ...(editPlace.longitude !== null ? { longitude: editPlace.longitude } : {}),
           radius: editPlace.radius,
           geofenceEnabled: editPlace.geofenceEnabled,
           alertOnArrival: editPlace.alertOnArrival,
@@ -343,13 +415,47 @@ export default function PlacesPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="placeAddress">Address (optional)</Label>
-                <Input
-                  id="placeAddress"
-                  placeholder="123 Main St, City, State"
-                  value={newPlace.address}
-                  onChange={(e) => setNewPlace({ ...newPlace, address: e.target.value })}
-                />
+                <Label htmlFor="placeAddress">Address</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="placeAddress"
+                    placeholder="123 Main St, City, State"
+                    value={newPlace.address}
+                    onChange={(e) => setNewPlace({ ...newPlace, address: e.target.value, locationLabel: '' })}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={isLocating}
+                    onClick={() => geocodeAddress(newPlace.address, 'new')}
+                    title="Find this address"
+                  >
+                    <Search className="w-4 h-4" />
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={isLocating}
+                  onClick={() => useCurrentLocation('new')}
+                >
+                  <Locate className="w-3.5 h-3.5 mr-1" />
+                  Use my current location instead
+                </Button>
+                {newPlace.locationLabel && (
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {newPlace.locationLabel}
+                  </p>
+                )}
+                {!newPlace.locationLabel && (
+                  <p className="text-xs text-muted-foreground">
+                    A geofence needs a real location — search the address above or use your current location.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Icon</Label>
@@ -460,7 +566,7 @@ export default function PlacesPage() {
               <Button variant="outline" onClick={() => setAddPlaceOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleAddPlace} disabled={isAdding}>
+              <Button onClick={handleAddPlace} disabled={isAdding || newPlace.latitude === null}>
                 {isAdding ? <Spinner className="w-4 h-4 mr-2" /> : null}
                 Save Place
               </Button>
@@ -488,13 +594,42 @@ export default function PlacesPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editPlaceAddress">Address (optional)</Label>
-                <Input
-                  id="editPlaceAddress"
-                  placeholder="123 Main St, City, State"
-                  value={editPlace.address}
-                  onChange={(e) => setEditPlace({ ...editPlace, address: e.target.value })}
-                />
+                <Label htmlFor="editPlaceAddress">Address</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="editPlaceAddress"
+                    placeholder="123 Main St, City, State"
+                    value={editPlace.address}
+                    onChange={(e) => setEditPlace({ ...editPlace, address: e.target.value })}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={isLocating}
+                    onClick={() => geocodeAddress(editPlace.address, 'edit')}
+                    title="Find this address"
+                  >
+                    <Search className="w-4 h-4" />
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={isLocating}
+                  onClick={() => useCurrentLocation('edit')}
+                >
+                  <Locate className="w-3.5 h-3.5 mr-1" />
+                  Use my current location instead
+                </Button>
+                {editPlace.locationLabel && (
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {editPlace.locationLabel}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Icon</Label>

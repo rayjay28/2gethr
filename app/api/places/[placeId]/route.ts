@@ -106,9 +106,9 @@ export async function PATCH(
       )
     }
 
-    if (places[0].role !== "PARENT") {
+    if (!["PARENT", "GUARDIAN", "ADMIN"].includes(places[0].role)) {
       return NextResponse.json(
-        { success: false, error: "Only parents can update saved places" },
+        { success: false, error: "Only parents or guardians can update saved places" },
         { status: 403 }
       )
     }
@@ -244,9 +244,9 @@ export async function DELETE(
       )
     }
 
-    if (places[0].role !== "PARENT") {
+    if (!["PARENT", "GUARDIAN", "ADMIN"].includes(places[0].role)) {
       return NextResponse.json(
-        { success: false, error: "Only parents can delete saved places" },
+        { success: false, error: "Only parents or guardians can delete saved places" },
         { status: 403 }
       )
     }

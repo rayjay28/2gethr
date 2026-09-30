@@ -105,9 +105,9 @@ export async function POST(request: NextRequest) {
       WHERE family_id = ${validatedData.familyId} AND user_id = ${user.id} AND is_active = true
     `
 
-    if (membership.length === 0 || membership[0].role !== "PARENT") {
+    if (membership.length === 0 || !["PARENT", "GUARDIAN", "ADMIN"].includes(membership[0].role)) {
       return NextResponse.json(
-        { success: false, error: "Only parents can create saved places" },
+        { success: false, error: "Only parents or guardians can create saved places" },
         { status: 403 }
       )
     }
