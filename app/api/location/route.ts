@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
     const subscription = await checkFamilySubscription(setting.family_id)
     if (!subscription.features.locationSharing) {
       return NextResponse.json(
-        { success: false, error: "Location sharing requires a Basic or Premium subscription" },
+        { success: false, error: "Location sharing requires the Premium plan", code: "SUBSCRIPTION_REQUIRED" },
         { status: 403 }
       )
     }

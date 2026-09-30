@@ -46,6 +46,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Only parents/guardians (and admins) can request another member's location.
+    // The UI already hides the "Ping" button for other roles, but that must also
+    // be enforced server-side, or a CHILD account could directly call this
+    // endpoint to request anyone's location, including a parent's.
+    const requesterRole = membership[0].role
+    if (!["PARENT", "GUARDIAN", "ADMIN"].includes(requesterRole)) {
+      return NextResponse.json(
+        { success: false, error: "Only parents or guardians can request a family member's location" },
+        { status: 403 }
+      )
+    }
+
     // Prevent pinging yourself
     if (membership[0].target_user_id === user.id) {
       return NextResponse.json(

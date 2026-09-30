@@ -107,11 +107,12 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Only parents can view others' settings, or user can view their own
+    // Parents/guardians/admins can view others' settings, or user can view their own
     const isOwnSettings = membership[0].target_user_id === user.id
-    if (!isOwnSettings && membership[0].role !== "PARENT") {
+    const canManageOthers = ["PARENT", "GUARDIAN", "ADMIN"].includes(membership[0].role)
+    if (!isOwnSettings && !canManageOthers) {
       return NextResponse.json(
-        { success: false, error: "Only parents can view other members' location settings" },
+        { success: false, error: "Only parents or guardians can view other members' location settings" },
         { status: 403 }
       )
     }
@@ -178,11 +179,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     const isOwnSettings = membership[0].target_user_id === user.id
-    const isParent = membership[0].role === "PARENT"
+    const isParentOrGuardian = ["PARENT", "GUARDIAN", "ADMIN"].includes(membership[0].role)
     const targetIsChild = membership[0].target_role === "CHILD"
 
-    // Permission check: user can update own settings, parent can update child's settings
-    if (!isOwnSettings && !(isParent && targetIsChild)) {
+    // Permission check: user can update own settings, parent/guardian/admin can update a child's settings
+    if (!isOwnSettings && !(isParentOrGuardian && targetIsChild)) {
       return NextResponse.json(
         { success: false, error: "You can only update your own settings or your children's settings" },
         { status: 403 }
@@ -193,7 +194,7 @@ export async function PATCH(request: NextRequest) {
     const subscription = await checkFamilySubscription(membership[0].family_id)
     if (validatedData.shareWithFamily && !subscription.features.locationSharing) {
       return NextResponse.json(
-        { success: false, error: "Location sharing requires a Basic or Premium subscription" },
+        { success: false, error: "Location sharing requires the Premium plan", code: "SUBSCRIPTION_REQUIRED" },
         { status: 403 }
       )
     }
