@@ -18,8 +18,16 @@ export async function GET(request: NextRequest) {
     
     // Find events that need reminders sent
     // Look for events starting in the next 60 minutes that have reminder_minutes set
+    //
+    // e.status checks against the events.status Postgres enum, whose only
+    // valid values are PENDING/APPROVED/REJECTED/CANCELLED/ARCHIVED - there
+    // is no CONFIRMED. The previous 'CONFIRMED' literal here made every run
+    // of this query throw NeonDbError "invalid input value for enum
+    // event_status" before any reminder could ever be found, so no event
+    // reminder (push, SMS, or email) has ever actually fired. APPROVED is
+    // the status normal (non-rejected, non-cancelled) events end up with.
     const upcomingEvents = await sql`
-      SELECT 
+      SELECT
         e.id, e.title, e.start_time, e.reminder_minutes, e.location,
         e.created_by_id, e.calendar_id,
         c.family_id
@@ -27,7 +35,7 @@ export async function GET(request: NextRequest) {
       JOIN calendars c ON e.calendar_id = c.id
       WHERE e.start_time > NOW()
         AND e.start_time <= NOW() + INTERVAL '60 minutes'
-        AND e.status = 'CONFIRMED'
+        AND e.status = 'APPROVED'
         AND e.reminder_minutes IS NOT NULL
         AND array_length(e.reminder_minutes, 1) > 0
     `
