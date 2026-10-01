@@ -50,13 +50,20 @@ async function getUserNotificationPreferences(userId: string): Promise<{
     SELECT email, phone FROM users WHERE id = ${userId}
   `
 
+  // Reads from reminder_settings - the table the Settings page's
+  // notification-settings route actually reads and writes - not the
+  // never-populated notification_preferences table this used to query
+  // (nothing in the app ever inserts a row there, so every lookup against
+  // it silently fell back to hardcoded defaults regardless of what the
+  // user had toggled). reminder_settings has no in_app_enabled column;
+  // in-app notifications are always on, matching the fallback default
+  // this function already used.
   const settings = await sql`
-    SELECT 
+    SELECT
       email_enabled,
       sms_enabled,
-      push_enabled,
-      in_app_enabled
-    FROM notification_preferences
+      push_enabled
+    FROM reminder_settings
     WHERE user_id = ${userId}
   `
 
@@ -64,14 +71,13 @@ async function getUserNotificationPreferences(userId: string): Promise<{
     email_enabled: true,
     sms_enabled: false,
     push_enabled: true,
-    in_app_enabled: true,
   }
 
   return {
     email: user[0]?.email || null,
     phone: user[0]?.phone || null,
     channels: {
-      inApp: prefs.in_app_enabled !== false,
+      inApp: true,
       push: prefs.push_enabled !== false,
       email: prefs.email_enabled !== false,
       sms: prefs.sms_enabled === true,

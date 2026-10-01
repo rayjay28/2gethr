@@ -115,26 +115,38 @@ export async function createNotification({
     // (this file's DB+SMS path and lib/services/notification-dispatcher.ts's
     // FCM path) stop diverging. This never blocks or throws back to the
     // caller: a user with no active push subscription just gets sent:0 from
-    // sendPushToUser, and any FCM error is logged, not propagated, so a
-    // stale token or a transient Firebase issue can't break task/event
+    // sendPushToUser, and any error is logged, not propagated, so a stale
+    // token or a transient push-provider issue can't break task/event
     // notifications that already worked before push existed.
+    //
+    // Gated on reminder_settings.push_enabled - the same column the Settings
+    // page toggle writes to - so a user who turned push off there doesn't
+    // get a system-level notification anyway (this used to fire
+    // unconditionally for every notification type, ignoring the toggle).
     if (isFirebaseConfigured()) {
       try {
-        const clickAction =
-          typeof data.taskId === 'string'
-            ? `/tasks/${data.taskId}`
-            : typeof data.eventId === 'string'
-              ? `/calendar/event/${data.eventId}`
-              : '/'
+        const pushPrefs = await sql`
+          SELECT push_enabled FROM reminder_settings WHERE user_id = ${userId}
+        `
+        const pushEnabled = pushPrefs.length === 0 || pushPrefs[0].push_enabled
 
-        const pushData: Record<string, string> = { type }
-        for (const [key, value] of Object.entries(data)) {
-          if (value !== undefined && value !== null) {
-            pushData[key] = String(value)
+        if (pushEnabled) {
+          const clickAction =
+            typeof data.taskId === 'string'
+              ? `/tasks/${data.taskId}`
+              : typeof data.eventId === 'string'
+                ? `/calendar/event/${data.eventId}`
+                : '/'
+
+          const pushData: Record<string, string> = { type }
+          for (const [key, value] of Object.entries(data)) {
+            if (value !== undefined && value !== null) {
+              pushData[key] = String(value)
+            }
           }
-        }
 
-        await sendPushToUser(userId, { title, body, data: pushData, clickAction })
+          await sendPushToUser(userId, { title, body, data: pushData, clickAction })
+        }
       } catch (pushError) {
         console.error('[Notification] Push send failed (non-fatal):', pushError)
       }
