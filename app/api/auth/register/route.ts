@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import {
   hashPassword,
@@ -22,8 +22,20 @@ const registerSchema = z.object({
   firstName: z.string().max(100).optional(),
   lastName: z.string().max(100).optional(),
   phone: z.string().optional(),
+  smsConsent: z.boolean().optional().default(false),
   timezone: z.string().default("UTC"),
-})
+}).refine(
+  (data) => !data.phone || data.smsConsent,
+  { message: "Please check the SMS consent box to add a phone number", path: ["smsConsent"] }
+)
+
+// Snapshot of the disclosure language shown next to the SMS consent checkbox
+// at /register, at the time consent is recorded. Keeping this text alongside
+// the audit log entry (rather than just a boolean) gives us durable proof of
+// exactly what the user agreed to, which is what a toll-free verification
+// review or a TCPA dispute would ask for.
+const SMS_CONSENT_DISCLOSURE =
+  "I agree to receive SMS text messages from Togethr (family coordination reminders and account alerts) at the phone number provided. Message frequency varies. Message and data rates may apply. Reply STOP to cancel, HELP for help. View our Privacy Policy and Terms of Service."
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,10 +74,12 @@ export async function POST(request: NextRequest) {
 
     // Create user
     const userId = crypto.randomUUID()
+    const hasPhone = Boolean(validatedData.phone)
+    const smsConsentGiven = hasPhone && validatedData.smsConsent
     await sql`
       INSERT INTO users (
         id, email, password_hash, first_name, last_name,
-        phone, timezone, is_active, created_at, updated_at
+        phone, sms_notifications, timezone, is_active, created_at, updated_at
       )
       VALUES (
         ${userId},
@@ -74,6 +88,7 @@ export async function POST(request: NextRequest) {
         ${firstName},
         ${lastName},
         ${validatedData.phone || null},
+        ${smsConsentGiven},
         ${validatedData.timezone},
         true,
         NOW(),
@@ -119,6 +134,21 @@ export async function POST(request: NextRequest) {
       ipAddress,
       userAgent,
     })
+
+    // Record proof of SMS opt-in separately (TCPA / toll-free verification
+    // evidence trail): who consented, when, from where, to what phone
+    // number, and the exact disclosure text they agreed to.
+    if (smsConsentGiven) {
+      await logAuditEvent(userId, "CREATE", "sms_consent", userId, {
+        newValue: {
+          phone: validatedData.phone,
+          disclosure: SMS_CONSENT_DISCLOSURE,
+          consentedAt: new Date().toISOString(),
+        },
+        ipAddress,
+        userAgent,
+      })
+    }
 
     // Create response - include tokens for localStorage-based auth
     const response = NextResponse.json({

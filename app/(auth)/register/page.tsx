@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import Link from 'next/link'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Check, Phone } from 'lucide-react'
@@ -25,6 +26,7 @@ export default function RegisterPage() {
     password: '',
     confirmPassword: '',
   })
+  const [smsConsent, setSmsConsent] = useState(false)
 
   const passwordRequirements = [
     { label: 'At least 8 characters', met: formData.password.length >= 8 },
@@ -48,6 +50,11 @@ export default function RegisterPage() {
       return
     }
 
+    if (formData.phone && !smsConsent) {
+      toast.error('Please check the box to consent to SMS messages, or remove your phone number')
+      return
+    }
+
     setIsLoading(true)
 
     const result = await register({
@@ -55,6 +62,7 @@ export default function RegisterPage() {
       password: formData.password,
       displayName: formData.displayName || undefined,
       phone: formData.phone || undefined,
+      smsConsent: formData.phone ? smsConsent : undefined,
     })
 
     if (result.success) {
@@ -127,6 +135,22 @@ export default function RegisterPage() {
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">For SMS alerts with Basic or Premium plans</p>
+                <div className="flex items-start gap-2 pt-1">
+                  <Checkbox
+                    id="sms-consent"
+                    checked={smsConsent}
+                    onCheckedChange={(checked) => setSmsConsent(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <Label htmlFor="sms-consent" className="text-xs font-normal leading-snug text-muted-foreground">
+                    I agree to receive SMS text messages from Togethr (family coordination reminders and
+                    account alerts) at the phone number provided above. Message frequency varies. Message and
+                    data rates may apply. Reply STOP to cancel, HELP for help. View our{' '}
+                    <Link href="/privacy" className="underline hover:text-foreground">Privacy Policy</Link>
+                    {' '}and{' '}
+                    <Link href="/terms" className="underline hover:text-foreground">Terms of Service</Link>.
+                  </Label>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
@@ -184,7 +208,7 @@ export default function RegisterPage() {
               <Button 
                 type="submit" 
                 className="w-full h-11" 
-                disabled={isLoading || !isPasswordValid || !passwordsMatch}
+                disabled={isLoading || !isPasswordValid || !passwordsMatch || (Boolean(formData.phone) && !smsConsent)}
               >
                 {isLoading ? <Spinner className="w-4 h-4" /> : 'Create account'}
               </Button>
