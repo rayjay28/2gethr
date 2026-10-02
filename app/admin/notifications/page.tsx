@@ -59,11 +59,14 @@ export default function AdminNotificationsPage() {
   const [resendFromName, setResendFromName] = useState('Togethr')
   const [showResendKey, setShowResendKey] = useState(false)
   
-  // Firebase (Push) config
-  const [firebaseProjectId, setFirebaseProjectId] = useState('')
-  const [firebaseClientEmail, setFirebaseClientEmail] = useState('')
-  const [firebasePrivateKey, setFirebasePrivateKey] = useState('')
-  const [showFirebaseKey, setShowFirebaseKey] = useState(false)
+  // Web Push (VAPID) config. Despite the variable names below (kept to
+  // avoid a bigger diff), this app does NOT use Firebase Cloud Messaging -
+  // see lib/services/push.ts. Push is sent via the standard Web Push
+  // protocol, configured with a VAPID key pair, not a Firebase service
+  // account.
+  const [vapidPublicKey, setVapidPublicKey] = useState('')
+  const [vapidPrivateKey, setVapidPrivateKey] = useState('')
+  const [showVapidKey, setShowVapidKey] = useState(false)
   
   // Test message state
   const [testPhone, setTestPhone] = useState('')
@@ -128,11 +131,11 @@ export default function AdminNotificationsPage() {
     }
   }
   
-  const saveConfig = async (service: 'twilio' | 'resend' | 'firebase') => {
+  const saveConfig = async (service: 'twilio' | 'resend' | 'vapid') => {
     try {
       const token = getAdminAccessToken()
       let config: Record<string, string> = {}
-      
+
       switch (service) {
         case 'twilio':
           config = {
@@ -148,11 +151,10 @@ export default function AdminNotificationsPage() {
             fromName: resendFromName
           }
           break
-        case 'firebase':
+        case 'vapid':
           config = {
-            projectId: firebaseProjectId,
-            clientEmail: firebaseClientEmail,
-            privateKey: firebasePrivateKey
+            publicKey: vapidPublicKey,
+            privateKey: vapidPrivateKey
           }
           break
       }
@@ -246,7 +248,7 @@ export default function AdminNotificationsPage() {
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Push (Firebase)</CardTitle>
+            <CardTitle className="text-sm font-medium">Push (Web Push)</CardTitle>
             <Smartphone className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -273,7 +275,7 @@ export default function AdminNotificationsPage() {
           </TabsTrigger>
           <TabsTrigger value="push">
             <Bell className="w-4 h-4 mr-2" />
-            Push (Firebase)
+            Push (Web Push)
           </TabsTrigger>
         </TabsList>
         
@@ -499,16 +501,18 @@ export default function AdminNotificationsPage() {
         <TabsContent value="push">
           <Card>
             <CardHeader>
-              <CardTitle>Firebase Cloud Messaging Configuration</CardTitle>
+              <CardTitle>Web Push (VAPID) Configuration</CardTitle>
               <CardDescription>
-                Configure Firebase for sending push notifications to mobile devices and browsers.
-                <a 
-                  href="https://console.firebase.google.com" 
-                  target="_blank" 
+                Push notifications (browser and the installed Android app alike) are sent with the
+                standard Web Push protocol, authenticated with a VAPID key pair. This app does not
+                use Firebase Cloud Messaging.
+                <a
+                  href="https://developer.mozilla.org/en-US/docs/Web/API/Push_API"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="ml-2 text-primary inline-flex items-center hover:underline"
                 >
-                  Open Firebase Console <ExternalLink className="w-3 h-3 ml-1" />
+                  About Web Push / VAPID <ExternalLink className="w-3 h-3 ml-1" />
                 </a>
               </CardDescription>
             </CardHeader>
@@ -516,9 +520,9 @@ export default function AdminNotificationsPage() {
               {services?.push?.configured ? (
                 <Alert className="border-green-200 bg-green-50">
                   <Check className="w-4 h-4 text-green-600" />
-                  <AlertTitle className="text-green-800">Firebase Configured</AlertTitle>
+                  <AlertTitle className="text-green-800">Web Push Configured</AlertTitle>
                   <AlertDescription className="text-green-700">
-                    Firebase Cloud Messaging is configured and ready to send push notifications.
+                    VAPID keys are set and push notifications are ready to send.
                   </AlertDescription>
                 </Alert>
               ) : (
@@ -526,53 +530,46 @@ export default function AdminNotificationsPage() {
                   <AlertTriangle className="w-4 h-4" />
                   <AlertTitle>Environment Variables Required</AlertTitle>
                   <AlertDescription>
-                    Add FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY to your Vercel project settings.
-                    Get these from your Firebase service account JSON file.
+                    Add NEXT_PUBLIC_VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY to your Vercel project
+                    settings (Production environment). Generate a pair with the
+                    generateVAPIDKeys() helper in lib/services/web-push-vapid.ts, or the fields
+                    below as a scratch pad - this form does not save them for you, it only
+                    validates the values you paste in. The real values must be set as Vercel
+                    environment variables.
                   </AlertDescription>
                 </Alert>
               )}
-              
+
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="firebaseProject">Project ID</Label>
-                  <Input
-                    id="firebaseProject"
-                    placeholder="your-project-id"
-                    value={firebaseProjectId}
-                    onChange={(e) => setFirebaseProjectId(e.target.value)}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="firebaseEmail">Client Email</Label>
-                  <Input
-                    id="firebaseEmail"
-                    type="email"
-                    placeholder="firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com"
-                    value={firebaseClientEmail}
-                    onChange={(e) => setFirebaseClientEmail(e.target.value)}
-                  />
-                </div>
-                
                 <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="firebaseKey">Private Key</Label>
+                  <Label htmlFor="vapidPublicKey">Public Key (NEXT_PUBLIC_VAPID_PUBLIC_KEY)</Label>
+                  <Input
+                    id="vapidPublicKey"
+                    placeholder="base64url-encoded public key"
+                    value={vapidPublicKey}
+                    onChange={(e) => setVapidPublicKey(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="vapidPrivateKey">Private Key (VAPID_PRIVATE_KEY)</Label>
                   <div className="relative">
                     <Textarea
-                      id="firebaseKey"
-                      placeholder="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
-                      value={firebasePrivateKey}
-                      onChange={(e) => setFirebasePrivateKey(e.target.value)}
-                      className={showFirebaseKey ? '' : 'text-security-disc'}
-                      rows={4}
+                      id="vapidPrivateKey"
+                      placeholder="base64url-encoded private key"
+                      value={vapidPrivateKey}
+                      onChange={(e) => setVapidPrivateKey(e.target.value)}
+                      className={showVapidKey ? '' : 'text-security-disc'}
+                      rows={2}
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
                       className="absolute right-2 top-2"
-                      onClick={() => setShowFirebaseKey(!showFirebaseKey)}
+                      onClick={() => setShowVapidKey(!showVapidKey)}
                     >
-                      {showFirebaseKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showVapidKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </Button>
                   </div>
                 </div>
@@ -661,8 +658,8 @@ export default function AdminNotificationsPage() {
               </div>
               
               <div className="flex justify-end">
-                <Button onClick={() => saveConfig('firebase')}>
-                  Save Firebase Configuration
+                <Button onClick={() => saveConfig('vapid')}>
+                  Validate VAPID Configuration
                 </Button>
               </div>
             </CardContent>

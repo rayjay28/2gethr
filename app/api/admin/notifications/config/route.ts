@@ -49,16 +49,16 @@ export async function POST(request: NextRequest) {
           configured: true
         })
 
-      case 'firebase':
-        if (!config.projectId || !config.clientEmail || !config.privateKey) {
-          return NextResponse.json({ 
-            error: "Missing required Firebase configuration.",
-            instructions: "Add FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY as environment variables in Vercel"
+      case 'vapid':
+        if (!config.publicKey || !config.privateKey) {
+          return NextResponse.json({
+            error: "Missing required VAPID configuration.",
+            instructions: "Add NEXT_PUBLIC_VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY as environment variables in Vercel"
           }, { status: 400 })
         }
-        return NextResponse.json({ 
-          success: true, 
-          message: "Firebase configuration validated. Please ensure all Firebase environment variables are set in Vercel.",
+        return NextResponse.json({
+          success: true,
+          message: "VAPID configuration validated. Please ensure NEXT_PUBLIC_VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are set in your Vercel Environment Variables.",
           configured: true
         })
 

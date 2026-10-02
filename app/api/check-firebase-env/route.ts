@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server'
 import { getAdminFromToken } from '@/lib/admin-auth'
 
-// SECURITY FIX: this debug endpoint was publicly accessible with no auth and
-// echoed back the Firebase project id, client email, and a preview + length
-// of the private key to anyone who requested the URL. It now requires an
-// authenticated admin and only reports booleans (configured/not configured),
-// never any part of the secret values. Recommend removing this route
-// entirely before shipping if it's no longer needed for setup diagnostics.
+// SECURITY FIX (kept): this debug endpoint was publicly accessible with no
+// auth and echoed back secret values to anyone who requested the URL. It
+// still requires an authenticated admin and only reports booleans, never
+// any part of a secret.
+//
+// CORRECTNESS FIX: this app does not use Firebase for push (see
+// lib/services/push.ts) - it was switched to the standard Web Push
+// protocol (VAPID keys), so checking FIREBASE_PROJECT_ID/CLIENT_EMAIL/
+// PRIVATE_KEY here was checking variables nothing reads anymore and would
+// always report "not configured" regardless of whether push actually
+// works. Reports the VAPID variables push.ts actually checks instead.
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
@@ -17,11 +22,9 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({
-    FIREBASE_PROJECT_ID_SET: Boolean(process.env.FIREBASE_PROJECT_ID),
-    FIREBASE_CLIENT_EMAIL_SET: Boolean(process.env.FIREBASE_CLIENT_EMAIL),
-    FIREBASE_PRIVATE_KEY_SET: Boolean(process.env.FIREBASE_PRIVATE_KEY),
-    FIREBASE_PRIVATE_KEY_LOOKS_VALID:
-      !!process.env.FIREBASE_PRIVATE_KEY?.includes('-----BEGIN'),
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY_SET: Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+    VAPID_PRIVATE_KEY_SET: Boolean(process.env.VAPID_PRIVATE_KEY),
+    VAPID_SUBJECT_SET: Boolean(process.env.VAPID_SUBJECT),
     timestamp: new Date().toISOString(),
   })
 }

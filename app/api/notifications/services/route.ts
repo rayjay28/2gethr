@@ -18,9 +18,9 @@ export async function GET() {
           description: 'Send email notifications to users',
         },
         push: {
-          name: 'Firebase Push',
+          name: 'Web Push',
           configured: status.push,
-          description: 'Send push notifications to mobile devices',
+          description: 'Send push notifications to browsers and mobile devices',
         },
       },
       allConfigured: status.sms && status.email && status.push,
