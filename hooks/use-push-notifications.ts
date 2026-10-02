@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 
 interface PushNotificationState {
   isSupported: boolean
@@ -105,12 +105,10 @@ export function usePushNotifications() {
       }
 
       // Send subscription to server
-      const token = getAccessToken()
-      const response = await fetch('/api/notifications/push-token', {
+      const response = await authFetch('/api/notifications/push-token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           token: JSON.stringify(subscription),
@@ -156,12 +154,10 @@ export function usePushNotifications() {
         await subscription.unsubscribe()
 
         // Notify server to remove token
-        const token = getAccessToken()
-        await fetch('/api/notifications/push-token', {
+        await authFetch('/api/notifications/push-token', {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
           },
           body: JSON.stringify({
             token: JSON.stringify(subscription)

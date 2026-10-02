@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useAuth, getAccessToken, clearTokens } from '@/hooks/use-auth'
+import { useAuth, getAccessToken, clearTokens, authFetch } from '@/hooks/use-auth'
 import { useFamilies } from '@/hooks/use-family'
 import { useSubscription } from '@/hooks/use-subscription'
 import { Button } from '@/components/ui/button'
@@ -168,12 +168,10 @@ export default function SettingsPage() {
     // Save notification settings to database
     if (['emailNotifications', 'pushNotifications', 'smsNotifications', 'phoneAlerts', 'weeklyDigest'].includes(key)) {
       try {
-        const token = getAccessToken()
-        await fetch('/api/user/notification-settings', {
+        const res = await authFetch('/api/user/notification-settings', {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
             emailNotifications: key === 'emailNotifications' ? newValue : settings.emailNotifications,
@@ -183,6 +181,7 @@ export default function SettingsPage() {
             weeklyDigest: key === 'weeklyDigest' ? newValue : settings.weeklyDigest,
           }),
         })
+        if (!res.ok) throw new Error('Failed to save setting')
         toast.success('Setting updated')
       } catch {
         // Revert on error

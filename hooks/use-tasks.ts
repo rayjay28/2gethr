@@ -1,5 +1,5 @@
 import useSWR from 'swr'
-import { getAccessToken } from './use-auth'
+import { authFetch } from './use-auth'
 
 interface Task {
   id: string
@@ -32,10 +32,7 @@ interface Task {
 }
 
 const fetcher = async (url: string) => {
-  const token = getAccessToken()
-  const res = await fetch(url, {
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-  })
+  const res = await authFetch(url)
   if (!res.ok) throw new Error('Failed to fetch')
   return res.json()
 }
@@ -89,69 +86,55 @@ export async function createTask(taskData: {
   isRecurring?: boolean
   recurrenceRule?: string
 }) {
-  const token = getAccessToken()
-  const res = await fetch('/api/tasks', {
+  const res = await authFetch('/api/tasks', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(taskData),
   })
-  
+
   if (!res.ok) {
     const data = await res.json()
     throw new Error(data.error || 'Failed to create task')
   }
-  
+
   return res.json()
 }
 
 export async function updateTask(taskId: string, action: string, updates?: Record<string, unknown>) {
-  const token = getAccessToken()
-  const res = await fetch(`/api/tasks/${taskId}`, {
+  const res = await authFetch(`/api/tasks/${taskId}`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...updates }),
   })
-  
+
   if (!res.ok) {
     const data = await res.json()
     throw new Error(data.error || 'Failed to update task')
   }
-  
+
   return res.json()
 }
 
 export async function deleteTask(taskId: string) {
-  const token = getAccessToken()
-  const res = await fetch(`/api/tasks/${taskId}`, {
+  const res = await authFetch(`/api/tasks/${taskId}`, {
     method: 'DELETE',
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
   })
-  
+
   if (!res.ok) {
     const data = await res.json()
     throw new Error(data.error || 'Failed to delete task')
   }
-  
+
   return res.json()
 }
 
 export async function addTaskComment(taskId: string, content: string) {
-  const token = getAccessToken()
-  const res = await fetch(`/api/tasks/${taskId}/comments`, {
+  const res = await authFetch(`/api/tasks/${taskId}/comments`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   })
-  
+
   if (!res.ok) {
     const data = await res.json()
     throw new Error(data.error || 'Failed to add comment')
@@ -161,13 +144,9 @@ export async function addTaskComment(taskId: string, content: string) {
 }
 
 export async function updateTaskComment(taskId: string, commentId: string, content: string) {
-  const token = getAccessToken()
-  const res = await fetch(`/api/tasks/${taskId}/comments`, {
+  const res = await authFetch(`/api/tasks/${taskId}/comments`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ commentId, content }),
   })
 

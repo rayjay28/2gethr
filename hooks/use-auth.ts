@@ -56,15 +56,69 @@ export interface AuthState {
 }
 
 // Authenticated fetch helper
+//
+// The access token is short-lived (15 minutes) by design - that's expected
+// to expire routinely within a single session, not an edge case. Previously
+// this helper (and every hook/page that copied its getAccessToken()+fetch
+// pattern instead of using it) just sent the stale token and let the 401
+// bubble up as a generic failure - "Failed to update task", "Failed to
+// enable push notifications", etc. - any time 15 minutes had passed since
+// login, whether or not the person was still actively using the app. Only
+// the SWR fetcher behind useAuth()'s own /api/auth/me call happened to
+// retry with a refreshed token.
+//
+// This now does the same silent refresh-and-retry for every caller: on a
+// 401, it exchanges the stored refresh token for a new access token via
+// /api/auth/refresh, stores it, and retries the original request once
+// before giving up and clearing tokens (which signs the person out).
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = getAccessToken()
   const headers = new Headers(options.headers)
-  
+
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
-  
-  return fetch(url, { ...options, headers })
+
+  const res = await fetch(url, { ...options, headers })
+
+  if (res.status !== 401) {
+    return res
+  }
+
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) {
+    return res
+  }
+
+  try {
+    const refreshRes = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    })
+
+    if (!refreshRes.ok) {
+      clearTokens()
+      return res
+    }
+
+    const refreshData = await refreshRes.json()
+    const newAccessToken = refreshData?.data?.tokens?.accessToken
+    if (!newAccessToken) {
+      clearTokens()
+      return res
+    }
+
+    setTokens(newAccessToken, refreshToken)
+
+    const retryHeaders = new Headers(options.headers)
+    retryHeaders.set('Authorization', `Bearer ${newAccessToken}`)
+    return fetch(url, { ...options, headers: retryHeaders })
+  } catch {
+    // Network error during refresh - surface the original 401 rather than
+    // masking it with an unrelated throw.
+    return res
+  }
 }
 
 const fetcher = async (url: string) => {
