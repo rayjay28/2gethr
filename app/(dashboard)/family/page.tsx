@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import useSWR from 'swr'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 import { 
   Users, 
   UserPlus, 
@@ -90,10 +90,7 @@ export default function FamilyPage() {
 
   // Fetch unassigned members (users who joined but don't have child profile)
   const fetcher = async (url: string) => {
-    const token = getAccessToken()
-    const res = await fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
+    const res = await authFetch(url)
     if (!res.ok) throw new Error('Failed to fetch')
     const data = await res.json()
     return data.data

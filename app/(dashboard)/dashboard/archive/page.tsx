@@ -6,7 +6,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ArrowLeft, Archive, RotateCcw, Trash2, ListTodo, Calendar, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 
 interface ArchivedTask {
   id: string
@@ -40,19 +40,17 @@ export default function ArchivePage() {
 
   const fetchArchivedItems = useCallback(async () => {
     setIsLoading(true)
-    const token = getAccessToken()
-    const headers = token ? { Authorization: `Bearer ${token}` } : {}
 
     try {
       // Fetch archived tasks
-      const tasksRes = await fetch('/api/tasks/archive', { headers })
+      const tasksRes = await authFetch('/api/tasks/archive')
       if (tasksRes.ok) {
         const tasksData = await tasksRes.json()
         setTasks(tasksData.tasks || [])
       }
 
       // Fetch archived events
-      const eventsRes = await fetch('/api/events?status=ARCHIVED', { headers })
+      const eventsRes = await authFetch('/api/events?status=ARCHIVED')
       if (eventsRes.ok) {
         const eventsData = await eventsRes.json()
         setEvents(eventsData.events || [])
@@ -70,15 +68,11 @@ export default function ArchivePage() {
 
   const handleRestoreTask = async (taskId: string) => {
     setProcessingId(taskId)
-    const token = getAccessToken()
-    
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+      const res = await authFetch(`/api/tasks/${taskId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'unarchive' }),
       })
 
@@ -96,12 +90,10 @@ export default function ArchivePage() {
     if (!confirm('Are you sure you want to permanently delete this task?')) return
     
     setProcessingId(taskId)
-    const token = getAccessToken()
-    
+
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+      const res = await authFetch(`/api/tasks/${taskId}`, {
         method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
 
       if (res.ok) {
@@ -116,16 +108,16 @@ export default function ArchivePage() {
 
   const handleRestoreEvent = async (eventId: string) => {
     setProcessingId(eventId)
-    const token = getAccessToken()
-    
+
     try {
-      const res = await fetch(`/api/events/${eventId}`, {
+      // events.status is a Postgres enum whose only valid values are
+      // PENDING/APPROVED/REJECTED/CANCELLED/ARCHIVED - there is no
+      // CONFIRMED (same bug as the reminder cron had). APPROVED is the
+      // normal non-archived status, so that's what "restore" should set.
+      const res = await authFetch(`/api/events/${eventId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ status: 'CONFIRMED' }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'APPROVED' }),
       })
 
       if (res.ok) {
@@ -142,12 +134,10 @@ export default function ArchivePage() {
     if (!confirm('Are you sure you want to permanently delete this event?')) return
     
     setProcessingId(eventId)
-    const token = getAccessToken()
-    
+
     try {
-      const res = await fetch(`/api/events/${eventId}`, {
+      const res = await authFetch(`/api/events/${eventId}`, {
         method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
 
       if (res.ok) {

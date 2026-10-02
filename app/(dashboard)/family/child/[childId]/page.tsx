@@ -3,7 +3,7 @@
 import { use } from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -62,10 +62,7 @@ interface ChildData {
 }
 
 const fetcher = async (url: string) => {
-  const token = getAccessToken()
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const res = await authFetch(url)
   if (!res.ok) throw new Error('Failed to fetch')
   const data = await res.json()
   return data.data

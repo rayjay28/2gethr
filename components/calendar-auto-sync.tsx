@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useCalendarSync, CalendarSyncConnection } from '@/hooks/use-calendar-sync'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 
 /**
  * Runs the calendar/task auto-sync loop in the background for as long as
@@ -81,11 +81,7 @@ function useTaskTimer(connection: CalendarSyncConnection | undefined, endpoint: 
       if (isSyncingRef.current) return
       isSyncingRef.current = true
       try {
-        const token = getAccessToken()
-        await fetch(endpoint, {
-          method: 'POST',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
+        await authFetch(endpoint, { method: 'POST' })
       } catch {
         // Quietly retry on the next tick.
       } finally {

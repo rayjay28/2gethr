@@ -314,10 +314,8 @@ export function useAuth(): AuthState & {
       const formData = new FormData()
       formData.append('file', file)
       
-      const token = getAccessToken()
-      const res = await fetch('/api/auth/profile/photo', {
+      const res = await authFetch('/api/auth/profile/photo', {
         method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         body: formData,
       })
       

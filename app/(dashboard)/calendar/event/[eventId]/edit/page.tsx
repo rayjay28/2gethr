@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useEvent } from '@/hooks/use-events'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -91,8 +91,6 @@ export default function EditEventPage() {
     setIsSaving(true)
     
     try {
-      const token = getAccessToken()
-      
       // Build a correct, timezone-aware UTC instant from the local date/time
       // inputs (see lib/datetime.ts). This used to force a trailing "Z"
       // onto the locally-typed value, mislabeling it as already being UTC
@@ -108,12 +106,9 @@ export default function EditEventPage() {
         endTime = localDateTimeToISO(formData.endDate, formData.endTime)
       }
       
-      const res = await fetch(`/api/events/${eventId}`, {
+      const res = await authFetch(`/api/events/${eventId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: formData.title.trim(),
           description: formData.description.trim() || null,

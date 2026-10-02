@@ -2,7 +2,7 @@
 
 import useSWR from 'swr'
 import { useCallback } from 'react'
-import { getAccessToken } from './use-auth'
+import { authFetch } from './use-auth'
 
 export interface Notification {
   id: string
@@ -15,11 +15,7 @@ export interface Notification {
 }
 
 const fetcher = async (url: string) => {
-  const token = getAccessToken()
-  const res = await fetch(url, { 
-    credentials: 'include',
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-  })
+  const res = await authFetch(url, { credentials: 'include' })
   if (!res.ok) {
     if (res.status === 401) throw new Error('Unauthorized')
     throw new Error('Failed to fetch')
@@ -45,13 +41,9 @@ export function useNotifications(options: { limit?: number; unreadOnly?: boolean
   
   const markAsRead = useCallback(async (notificationId: string) => {
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/notifications', {
+      const res = await authFetch('/api/notifications', {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ notificationId }),
       })
@@ -70,13 +62,9 @@ export function useNotifications(options: { limit?: number; unreadOnly?: boolean
   
   const markAllAsRead = useCallback(async () => {
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/notifications', {
+      const res = await authFetch('/api/notifications', {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ markAllRead: true }),
       })

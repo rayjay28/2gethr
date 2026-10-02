@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
 import { useFamilies } from '@/hooks/use-family'
-import { getAccessToken } from '@/hooks/use-events'
+import { authFetch } from '@/hooks/use-events'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -122,13 +122,9 @@ function UpgradeForm() {
     setIsSubmitting(true)
 
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/subscription/checkout', {
+      const res = await authFetch('/api/subscription/checkout', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           familyId: primaryFamily.id,
           tier: selectedTier,

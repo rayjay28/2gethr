@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Input } from '@/components/ui/input'
 import { useCalendarSync } from '@/hooks/use-calendar-sync'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 
@@ -77,10 +77,7 @@ function CalendarSyncContent() {
   useEffect(() => {
     const loadIcalFeed = async () => {
       try {
-        const token = getAccessToken()
-        const res = await fetch('/api/calendar-sync/ical/generate', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
+        const res = await authFetch('/api/calendar-sync/ical/generate')
         const data = await res.json()
         if (data.success) {
           setIcalFeedUrl(data.feedUrl)
@@ -97,10 +94,8 @@ function CalendarSyncContent() {
   const handleGenerateIcalFeed = async () => {
     setIcalGenerating(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/calendar-sync/ical/generate', {
+      const res = await authFetch('/api/calendar-sync/ical/generate', {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
       const data = await res.json()
       if (data.success) {

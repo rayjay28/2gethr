@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 import { toast } from 'sonner'
 
 interface FavoriteItem {
@@ -38,10 +38,7 @@ interface FavoriteItem {
 }
 
 const fetcher = async (url: string) => {
-  const token = getAccessToken()
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const res = await authFetch(url)
   if (!res.ok) throw new Error('Failed to fetch')
   return res.json()
 }
@@ -56,10 +53,8 @@ export function FavoritesDropdown() {
 
   const removeFavorite = async (itemType: string, itemId: string) => {
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/favorites?type=${itemType}&itemId=${itemId}`, {
+      const res = await authFetch(`/api/favorites?type=${itemType}&itemId=${itemId}`, {
         method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
       if (res.ok) {
         toast.success('Removed from favorites')
@@ -179,13 +174,9 @@ export function useFavorites() {
 
   const addFavorite = async (itemType: 'task' | 'event' | 'place', itemId: string) => {
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/favorites', {
+      const res = await authFetch('/api/favorites', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ itemType, itemId }),
       })
       if (res.ok) {
@@ -202,10 +193,8 @@ export function useFavorites() {
 
   const removeFavorite = async (itemType: string, itemId: string) => {
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/favorites?type=${itemType}&itemId=${itemId}`, {
+      const res = await authFetch(`/api/favorites?type=${itemType}&itemId=${itemId}`, {
         method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
       if (res.ok) {
         toast.success('Removed from favorites')

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
 import { useFamilies } from '@/hooks/use-family'
 import { useSubscription, useSubscriptionTiers } from '@/hooks/use-subscription'
-import { getAccessToken } from '@/hooks/use-events'
+import { authFetch } from '@/hooks/use-events'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -74,13 +74,9 @@ export default function SubscriptionPage() {
     if (!primaryFamily?.id) return
     setIsCanceling(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/subscription/portal', {
+      const res = await authFetch('/api/subscription/portal', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ familyId: primaryFamily.id }),
       })
       const data = await res.json()

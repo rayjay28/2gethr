@@ -2,7 +2,7 @@
 
 import useSWR from 'swr'
 import { useCallback, useState } from 'react'
-import { getAccessToken } from './use-auth'
+import { authFetch } from './use-auth'
 
 export interface CalendarSyncConnection {
   id: string
@@ -22,10 +22,7 @@ export interface CalendarSyncConnection {
 }
 
 const fetcher = async (url: string) => {
-  const token = getAccessToken()
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const res = await authFetch(url)
   if (!res.ok) throw new Error('Failed to fetch')
   return res.json()
 }
@@ -40,10 +37,7 @@ export function useCalendarSync() {
   const [syncError, setSyncError] = useState<string | null>(null)
 
   const connectGoogle = useCallback(async () => {
-    const token = getAccessToken()
-    const res = await fetch('/api/calendar-sync/google/auth', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
+    const res = await authFetch('/api/calendar-sync/google/auth')
     const data = await res.json()
     
     if (data.success && data.authUrl) {
@@ -54,13 +48,9 @@ export function useCalendarSync() {
   }, [])
 
   const disconnect = useCallback(async (connectionId: string) => {
-    const token = getAccessToken()
-    const res = await fetch('/api/calendar-sync/connections', {
+    const res = await authFetch('/api/calendar-sync/connections', {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionId }),
     })
     
@@ -76,13 +66,9 @@ export function useCalendarSync() {
     connectionId: string,
     updates: { syncEnabled?: boolean; syncDirection?: string; syncIntervalMinutes?: number; taskSyncIntervalMinutes?: number; syncTasks?: boolean }
   ) => {
-    const token = getAccessToken()
-    const res = await fetch('/api/calendar-sync/connections', {
+    const res = await authFetch('/api/calendar-sync/connections', {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionId, ...updates }),
     })
     
@@ -99,10 +85,8 @@ export function useCalendarSync() {
     setSyncError(null)
 
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/calendar-sync/${provider}/sync`, {
+      const res = await authFetch(`/api/calendar-sync/${provider}/sync`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
 
       const data = await res.json()
@@ -123,13 +107,9 @@ export function useCalendarSync() {
   }, [mutate])
 
   const connectApple = useCallback(async (appleId: string, appPassword: string) => {
-    const token = getAccessToken()
-    const res = await fetch('/api/calendar-sync/apple/connect', {
+    const res = await authFetch('/api/calendar-sync/apple/connect', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ appleId, appPassword }),
     })
 

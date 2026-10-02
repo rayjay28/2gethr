@@ -17,7 +17,7 @@ import {
   HelpCircle,
   Inbox
 } from 'lucide-react'
-import { getAccessToken } from '@/hooks/use-events'
+import { authFetch } from '@/hooks/use-events'
 
 interface Ticket {
   id: string
@@ -38,10 +38,7 @@ export default function SupportPage() {
 
   const loadTickets = useCallback(async () => {
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/support', {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      })
+      const res = await authFetch('/api/support')
       
       if (res.ok) {
         const data = await res.json()

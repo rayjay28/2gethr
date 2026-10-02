@@ -13,7 +13,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ArrowLeft, Send, Lightbulb } from 'lucide-react'
 import { toast } from 'sonner'
 import { useFamilies } from '@/hooks/use-family'
-import { getAccessToken } from '@/hooks/use-events'
+import { authFetch } from '@/hooks/use-events'
 
 const categories = [
   { value: 'BILLING', label: 'Billing & Payments', icon: '💳', description: 'Subscription, charges, refunds' },
@@ -51,13 +51,9 @@ export default function NewTicketPage() {
 
     setSubmitting(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/support', {
+      const res = await authFetch('/api/support', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject,
           description,

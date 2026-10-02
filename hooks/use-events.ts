@@ -2,10 +2,10 @@
 
 import useSWR from 'swr'
 import { useCallback } from 'react'
-import { getAccessToken } from './use-auth'
+import { getAccessToken, authFetch } from './use-auth'
 
 // Re-export for convenience
-export { getAccessToken }
+export { getAccessToken, authFetch }
 
 export interface Event {
   id: string
@@ -65,10 +65,7 @@ export interface EventFilters {
 }
 
 const fetcher = async (url: string) => {
-  const token = getAccessToken()
-  const res = await fetch(url, {
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-  })
+  const res = await authFetch(url)
   if (!res.ok) throw new Error('Failed to fetch events')
   return res.json()
 }
@@ -113,22 +110,18 @@ export function useEvents(filters: EventFilters = {}) {
     }
   }) => {
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/events', {
+      const res = await authFetch('/api/events', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(eventData),
       })
-      
+
       const data = await res.json()
-      
+
       if (!res.ok) {
         return { success: false, error: data.error }
       }
-      
+
       await mutate()
       return { success: true, event: data.event }
     } catch (err) {
@@ -155,101 +148,87 @@ export function useEvent(eventId: string | null) {
     if (!eventId) return { success: false, error: 'No event selected' }
     
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/events/${eventId}`, {
+      const res = await authFetch(`/api/events/${eventId}`, {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
-      
+
       const data = await res.json()
-      
+
       if (!res.ok) {
         return { success: false, error: data.error }
       }
-      
+
       await mutate()
       return { success: true }
     } catch (err) {
       return { success: false, error: 'Network error' }
     }
   }, [eventId, mutate])
-  
+
   const deleteEvent = useCallback(async (deleteRecurrence: boolean = false) => {
     if (!eventId) return { success: false, error: 'No event selected' }
-    
+
     try {
-      const url = deleteRecurrence 
+      const url = deleteRecurrence
         ? `/api/events/${eventId}?deleteRecurrence=true`
         : `/api/events/${eventId}`
-      
-      const token = getAccessToken()
-      const res = await fetch(url, {
+
+      const res = await authFetch(url, {
         method: 'DELETE',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       })
-      
+
       if (!res.ok) {
         const data = await res.json()
         return { success: false, error: data.error }
       }
-      
+
       return { success: true }
     } catch (err) {
       return { success: false, error: 'Network error' }
     }
   }, [eventId])
-  
+
   const approveEvent = useCallback(async () => {
     if (!eventId) return { success: false, error: 'No event selected' }
-    
+
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/events/${eventId}/approve`, {
+      const res = await authFetch(`/api/events/${eventId}/approve`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'APPROVE' }),
       })
-      
+
       const data = await res.json()
-      
+
       if (!res.ok) {
         return { success: false, error: data.error }
       }
-      
+
       await mutate()
       return { success: true }
     } catch (err) {
       return { success: false, error: 'Network error' }
     }
   }, [eventId, mutate])
-  
+
   const rejectEvent = useCallback(async (reason?: string) => {
     if (!eventId) return { success: false, error: 'No event selected' }
-    
+
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/events/${eventId}/approve`, {
+      const res = await authFetch(`/api/events/${eventId}/approve`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'REJECT', responseNotes: reason }),
       })
-      
+
       const data = await res.json()
-      
+
       if (!res.ok) {
         return { success: false, error: data.error }
       }
-      
+
       await mutate()
       return { success: true }
     } catch (err) {
@@ -277,47 +256,39 @@ export function usePendingApprovals(familyId: string | null) {
   
   const approveEvent = useCallback(async (eventId: string) => {
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/events/${eventId}/approve`, {
+      const res = await authFetch(`/api/events/${eventId}/approve`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'APPROVE' }),
       })
-      
+
       const data = await res.json()
-      
+
       if (!res.ok) {
         return { success: false, error: data.error }
       }
-      
+
       await mutate()
       return { success: true }
     } catch {
       return { success: false, error: 'Network error' }
     }
   }, [mutate])
-  
+
   const rejectEvent = useCallback(async (eventId: string, reason?: string) => {
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/events/${eventId}/approve`, {
+      const res = await authFetch(`/api/events/${eventId}/approve`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'REJECT', responseNotes: reason }),
       })
-      
+
       const data = await res.json()
-      
+
       if (!res.ok) {
         return { success: false, error: data.error }
       }
-      
+
       await mutate()
       return { success: true }
     } catch {

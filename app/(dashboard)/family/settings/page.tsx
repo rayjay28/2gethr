@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useFamilies, useFamily } from '@/hooks/use-family'
-import { useAuth, getAccessToken } from '@/hooks/use-auth'
+import { useAuth, authFetch } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -73,13 +73,9 @@ export default function FamilySettingsPage() {
     
     setSaving(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/families/${selectedFamilyId}`, {
+      const res = await authFetch(`/api/families/${selectedFamilyId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: formData.name,
         }),
@@ -104,13 +100,9 @@ export default function FamilySettingsPage() {
     
     setRegeneratingCode(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/families/${selectedFamilyId}/invite`, {
+      const res = await authFetch(`/api/families/${selectedFamilyId}/invite`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'regenerate' }),
       })
 

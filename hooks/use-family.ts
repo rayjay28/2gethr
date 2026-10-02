@@ -2,7 +2,7 @@
 
 import useSWR from 'swr'
 import { useCallback } from 'react'
-import { getAccessToken } from './use-auth'
+import { authFetch } from './use-auth'
 
 export interface FamilyMember {
   id: string
@@ -43,10 +43,7 @@ export interface Family {
 }
 
 const fetcher = async (url: string) => {
-  const token = getAccessToken()
-  const res = await fetch(url, { 
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-  })
+  const res = await authFetch(url)
   if (!res.ok) {
     if (res.status === 401) throw new Error('Unauthorized')
     throw new Error('Failed to fetch')
@@ -59,13 +56,9 @@ export function useFamilies() {
   
   const createFamily = useCallback(async (name: string) => {
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/families', {
+      const res = await authFetch('/api/families', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       })
       
@@ -84,13 +77,9 @@ export function useFamilies() {
   
   const joinFamily = useCallback(async (inviteCode: string) => {
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/families/join', {
+      const res = await authFetch('/api/families/join', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ inviteCode }),
       })
       
@@ -127,13 +116,9 @@ export function useFamily(familyId: string | null) {
     if (!familyId) return { success: false, error: 'No family selected' }
     
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/families/${familyId}`, {
+      const res = await authFetch(`/api/families/${familyId}`, {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
       
@@ -154,10 +139,8 @@ export function useFamily(familyId: string | null) {
     if (!familyId) return { success: false, error: 'No family selected' }
     
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/families/${familyId}/invite`, {
+      const res = await authFetch(`/api/families/${familyId}/invite`, {
         method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       })
       
       const data = await res.json()
@@ -183,13 +166,9 @@ export function useFamily(familyId: string | null) {
     if (!familyId) return { success: false, error: 'No family selected' }
     
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/families/${familyId}/children`, {
+      const res = await authFetch(`/api/families/${familyId}/children`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(childData),
       })
       
@@ -213,13 +192,9 @@ export function useFamily(familyId: string | null) {
     if (!familyId) return { success: false, error: 'No family selected' }
     
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/families/${familyId}/members/${memberId}`, {
+      const res = await authFetch(`/api/families/${familyId}/members/${memberId}`, {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
       
@@ -240,10 +215,8 @@ export function useFamily(familyId: string | null) {
     if (!familyId) return { success: false, error: 'No family selected' }
     
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/families/${familyId}/members/${memberId}`, {
+      const res = await authFetch(`/api/families/${familyId}/members/${memberId}`, {
         method: 'DELETE',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       })
       
       if (!res.ok) {

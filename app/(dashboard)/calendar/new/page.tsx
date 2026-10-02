@@ -19,7 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { useAuth, getAccessToken } from '@/hooks/use-auth'
+import { useAuth, authFetch } from '@/hooks/use-auth'
 import { useFamilies, useFamily, FamilyMember, ChildProfile } from '@/hooks/use-family'
 
 const EVENT_CATEGORIES = [
@@ -125,10 +125,7 @@ function NewEventForm() {
   }
   
   const placesFetcher = async (url: string) => {
-    const token = getAccessToken()
-    const res = await fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
+    const res = await authFetch(url)
     if (!res.ok) return []
     const data = await res.json()
     return data.data || []
@@ -204,14 +201,9 @@ function NewEventForm() {
         ? localEndOfDayToISO(formData.endDate)
         : localDateTimeToISO(formData.endDate, formData.endTime)
       
-      const token = getAccessToken()
-      
-      const res = await fetch('/api/events', {
+      const res = await authFetch('/api/events', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           familyId: formData.familyId,
           title: formData.title.trim(),

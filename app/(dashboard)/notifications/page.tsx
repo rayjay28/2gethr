@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import { useAuth, getAccessToken } from '@/hooks/use-auth'
+import { useAuth, getAccessToken, authFetch } from '@/hooks/use-auth'
 
 interface Notification {
   id: string
@@ -61,9 +61,7 @@ export default function NotificationsPage() {
     }
 
     try {
-      const res = await fetch('/api/notifications', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authFetch('/api/notifications')
       if (res.ok) {
         const data = await res.json()
         const notificationsList = data.data?.notifications || data.notifications || []
@@ -93,12 +91,9 @@ export default function NotificationsPage() {
 
     setMarking(id)
     try {
-      const res = await fetch('/api/notifications', {
+      const res = await authFetch('/api/notifications', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationIds: [id] }),
       })
 
@@ -123,12 +118,9 @@ export default function NotificationsPage() {
 
     setMarking('all')
     try {
-      const res = await fetch('/api/notifications', {
+      const res = await authFetch('/api/notifications', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationIds: unreadIds }),
       })
 

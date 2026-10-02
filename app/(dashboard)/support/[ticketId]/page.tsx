@@ -21,7 +21,7 @@ import {
   CheckCircle2
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { getAccessToken } from '@/hooks/use-events'
+import { authFetch } from '@/hooks/use-events'
 
 interface Message {
   id: string
@@ -62,10 +62,7 @@ export default function TicketDetailPage() {
 
   const loadTicket = useCallback(async () => {
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/support/${ticketId}`, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      })
+      const res = await authFetch(`/api/support/${ticketId}`)
 
       if (res.ok) {
         const data = await res.json()
@@ -96,13 +93,9 @@ export default function TicketDetailPage() {
 
     setSending(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/support/${ticketId}`, {
+      const res = await authFetch(`/api/support/${ticketId}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: newMessage }),
       })
 

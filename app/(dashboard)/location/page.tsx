@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useFamilies } from '@/hooks/use-family'
 import { useSubscription } from '@/hooks/use-subscription'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -96,10 +96,7 @@ export default function LocationPage() {
     if (!selectedFamily?.id) return
     
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/location?familyId=${selectedFamily.id}`, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      })
+      const res = await authFetch(`/api/location?familyId=${selectedFamily.id}`)
       
       const data = await res.json()
       if (res.ok) {
@@ -118,11 +115,8 @@ export default function LocationPage() {
     if (!selectedFamily?.id) return
     
     try {
-      const token = getAccessToken()
       // API returns settings for all families user is in
-      const res = await fetch('/api/location/settings', {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      })
+      const res = await authFetch('/api/location/settings')
       
       if (res.ok) {
         const data = await res.json()
@@ -164,13 +158,9 @@ export default function LocationPage() {
     
     setRequestingLocation(memberId)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/location/request', {
+      const res = await authFetch('/api/location/request', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           familyId: selectedFamily.id,
           memberId,
@@ -236,13 +226,9 @@ export default function LocationPage() {
     
     const sendLocation = async (position: GeolocationPosition) => {
       try {
-        const token = getAccessToken()
-        await fetch('/api/location', {
+        await authFetch('/api/location', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
@@ -305,13 +291,9 @@ export default function LocationPage() {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
             try {
-              const token = getAccessToken()
-              const res = await fetch('/api/location', {
+              const res = await authFetch('/api/location', {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   latitude: position.coords.latitude,
                   longitude: position.coords.longitude,
@@ -357,14 +339,10 @@ export default function LocationPage() {
     
     setUpdatingSettings(true)
     try {
-      const token = getAccessToken()
       // Send updates directly - mode is already in correct format (OFF/ACTIVE/PAUSED)
-      const res = await fetch('/api/location/settings', {
+      const res = await authFetch('/api/location/settings', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ memberId: mySettings.memberId, ...updates }),
       })
       

@@ -2,7 +2,7 @@
 
 import useSWR from 'swr'
 import { useCallback } from 'react'
-import { getAccessToken } from './use-auth'
+import { authFetch } from './use-auth'
 
 export interface Subscription {
   id: string
@@ -62,11 +62,7 @@ interface APISubscriptionResponse {
 }
 
 const fetcher = async (url: string): Promise<{ subscription: Subscription | null; access: PremiumAccess }> => {
-  const token = getAccessToken()
-  const res = await fetch(url, { 
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-    credentials: 'include',
-  })
+  const res = await authFetch(url, { credentials: 'include' })
   if (!res.ok) {
     if (res.status === 401) throw new Error('Unauthorized')
     if (res.status === 404) return {
@@ -150,13 +146,9 @@ export function useSubscription(familyId: string | null) {
     if (!familyId) return { success: false, error: 'No family selected' }
     
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/subscriptions/${familyId}`, {
+      const res = await authFetch(`/api/subscriptions/${familyId}`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'start_trial' }),
       })
       
@@ -181,10 +173,8 @@ export function useSubscription(familyId: string | null) {
     if (!familyId) return { success: false, error: 'No family selected' }
     
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/subscriptions/${familyId}`, {
+      const res = await authFetch(`/api/subscriptions/${familyId}`, {
         method: 'DELETE',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       })
       
       const responseData = await res.json()

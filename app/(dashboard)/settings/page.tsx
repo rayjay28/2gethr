@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useAuth, getAccessToken, clearTokens, authFetch } from '@/hooks/use-auth'
+import { useAuth, clearTokens, authFetch } from '@/hooks/use-auth'
 import { useFamilies } from '@/hooks/use-family'
 import { useSubscription } from '@/hooks/use-subscription'
 import { Button } from '@/components/ui/button'
@@ -91,10 +91,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const token = getAccessToken()
-        const res = await fetch('/api/user/notification-settings', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
+        const res = await authFetch('/api/user/notification-settings')
         if (res.ok) {
           const data = await res.json()
           if (data.data) {
@@ -213,12 +210,8 @@ export default function SettingsPage() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const token = getAccessToken()
-      const res = await fetch('/api/auth/profile/photo', {
+      const res = await authFetch('/api/auth/profile/photo', {
         method: 'POST',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
         body: formData,
       })
 
@@ -245,12 +238,8 @@ export default function SettingsPage() {
 
     setUploading(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/auth/profile/photo', {
+      const res = await authFetch('/api/auth/profile/photo', {
         method: 'DELETE',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
       })
 
       const data = await res.json()
@@ -273,13 +262,9 @@ export default function SettingsPage() {
   const handleSaveProfile = async () => {
     setSavingProfile(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/auth/profile', {
+      const res = await authFetch('/api/auth/profile', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           firstName: profile.firstName,
           lastName: profile.lastName,
@@ -318,10 +303,7 @@ export default function SettingsPage() {
   const handleExportData = async () => {
     setExporting(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/user/export', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
+      const res = await authFetch('/api/user/export')
       
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))
@@ -355,13 +337,9 @@ export default function SettingsPage() {
     
     setResetting(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/account/reset', {
+      const res = await authFetch('/api/account/reset', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmEmail: resetConfirmEmail }),
       })
       
@@ -389,13 +367,9 @@ export default function SettingsPage() {
 
     setDeleting(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/account/delete', {
+      const res = await authFetch('/api/account/delete', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmEmail: deleteConfirmEmail }),
       })
 

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useFamilies } from '@/hooks/use-family'
 import { useSubscription } from '@/hooks/use-subscription'
-import { getAccessToken } from '@/hooks/use-auth'
+import { authFetch } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -80,11 +80,7 @@ const defaultColors = [
 ]
 
 const fetcher = async (url: string) => {
-  const token = getAccessToken()
-  const res = await fetch(url, { 
-    credentials: 'include',
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-  })
+  const res = await authFetch(url, { credentials: 'include' })
   if (!res.ok) throw new Error('Failed to fetch')
   const data = await res.json()
   return data.data
@@ -141,10 +137,8 @@ export default function PlacesPage() {
     }
     setIsLocating(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/places/geocode?address=${encodeURIComponent(address)}`, {
+      const res = await authFetch(`/api/places/geocode?address=${encodeURIComponent(address)}`, {
         credentials: 'include',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       })
       const data = await res.json()
       if (data.success) {
@@ -209,13 +203,9 @@ export default function PlacesPage() {
 
     setIsAdding(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch('/api/places', {
+      const res = await authFetch('/api/places', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           familyId: primaryFamily.id,
@@ -286,13 +276,9 @@ export default function PlacesPage() {
 
     setIsEditing(true)
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/places/${editingPlace.id}`, {
+      const res = await authFetch(`/api/places/${editingPlace.id}`, {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           name: editPlace.name,
@@ -328,11 +314,9 @@ export default function PlacesPage() {
     if (!confirm('Are you sure you want to delete this place?')) return
 
     try {
-      const token = getAccessToken()
-      const res = await fetch(`/api/places/${placeId}`, {
+      const res = await authFetch(`/api/places/${placeId}`, {
         method: 'DELETE',
         credentials: 'include',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       })
 
       if (res.ok) {
