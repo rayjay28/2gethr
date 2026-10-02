@@ -176,16 +176,19 @@ export async function sendPushToUsers(
 export async function registerPushToken(
   userId: string,
   token: string,
-  platform: 'web' | 'ios' | 'android'
+  platform: 'web' | 'ios' | 'android',
+  deviceInfo?: Record<string, unknown>
 ): Promise<boolean> {
   try {
     // Upsert the token
     await sql`
-      INSERT INTO push_tokens (user_id, token, platform, is_active, created_at, updated_at)
-      VALUES (${userId}, ${token}, ${platform}, true, NOW(), NOW())
+      INSERT INTO push_tokens (user_id, token, platform, device_info, is_active, created_at, updated_at)
+      VALUES (${userId}, ${token}, ${platform}, ${JSON.stringify(deviceInfo || {})}::jsonb, true, NOW(), NOW())
       ON CONFLICT (token)
       DO UPDATE SET
         user_id = ${userId},
+        platform = ${platform},
+        device_info = ${JSON.stringify(deviceInfo || {})}::jsonb,
         is_active = true,
         updated_at = NOW()
     `
