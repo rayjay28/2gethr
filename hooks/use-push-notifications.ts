@@ -85,10 +85,26 @@ export function usePushNotifications() {
       // Get service worker registration
       const registration = await navigator.serviceWorker.ready
 
+      // BUG FIX: if a subscription already exists (e.g. from before a VAPID
+      // key rotation, or one created without an applicationServerKey via the
+      // old fallback branch below), calling pushManager.subscribe() again
+      // throws "InvalidStateError: A subscription with a different
+      // applicationServerKey (or gcm_sender_id) already exists" because a
+      // service worker registration can only hold one subscription at a
+      // time. That error was being caught below and surfaced only as a
+      // generic failure, so the UI toggle just silently reverted - this is
+      // why a stale subscription (e.g. a phone's old push registration)
+      // blocked ever re-subscribing. Unsubscribe any existing subscription
+      // first so a fresh one can always be created.
+      const existingSubscription = await registration.pushManager.getSubscription()
+      if (existingSubscription) {
+        await existingSubscription.unsubscribe()
+      }
+
       // Subscribe to push notifications
       // Note: In production, you'd get this key from your server/Firebase
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-      
+
       let subscription: PushSubscription
 
       if (vapidPublicKey) {
