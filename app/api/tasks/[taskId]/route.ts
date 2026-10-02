@@ -56,8 +56,15 @@ async function syncTaskStatusUpdate(
   const statusMessage = statusMessages[newStatus] || `status changed to ${newStatus}`
   
   // Look up the display name of whoever made the change, for the email/notification body.
-  const changedByUser = await sql`SELECT name FROM users WHERE id = ${userId}`
-  const changedByName = changedByUser[0]?.name || 'Someone'
+  // users has first_name/last_name, not a single "name" column - selecting
+  // "name" threw a Postgres "column does not exist" error that was
+  // uncaught here, so EVERY task status change (complete/approve/reject/
+  // start/hold/resume/pending/cancel/archive/unarchive) 500'd with
+  // "Failed to update task" since this line was added.
+  const changedByUser = await sql`SELECT first_name, last_name FROM users WHERE id = ${userId}`
+  const changedByName = changedByUser[0]
+    ? `${changedByUser[0].first_name || ''} ${changedByUser[0].last_name || ''}`.trim() || 'Someone'
+    : 'Someone'
 
   for (const notifyUserId of notifyUsers) {
     await createNotification({

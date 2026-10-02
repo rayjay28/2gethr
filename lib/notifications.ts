@@ -174,8 +174,12 @@ export async function createNotification({
     // optionally, an SMS.
     if (sendEmailFlag && isResendConfigured()) {
       try {
+        // users has no "name" column (only first_name/last_name), and it's
+        // not even used below - selecting it just made this query throw
+        // "column \"name\" does not exist" every time, silently (caught
+        // below), so these emails never actually sent.
         const userEmailPrefs = await sql`
-          SELECT u.email, u.name, rs.email_enabled
+          SELECT u.email, rs.email_enabled
           FROM users u
           LEFT JOIN reminder_settings rs ON u.id = rs.user_id
           WHERE u.id = ${userId}
