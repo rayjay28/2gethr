@@ -65,21 +65,31 @@ export function usePushNotifications() {
     }
   }
 
-  const subscribe = useCallback(async () => {
+  // Returns { success, error } instead of a bare boolean. The caller
+  // (Settings page) used to read `pushNotifications.error` right after
+  // awaiting this function to decide what toast to show, but that reads a
+  // stale closure of the hook's state from before this call's setState took
+  // effect, so the real error (whatever actually failed - permission,
+  // subscribe, or the server POST) was never shown; the toast always fell
+  // back to the generic "Failed to enable push notifications" text no
+  // matter what went wrong. Returning the error directly lets the caller
+  // show the real message.
+  const subscribe = useCallback(async (): Promise<{ success: boolean; error: string | null }> => {
     setState(prev => ({ ...prev, isLoading: true, error: null }))
 
     try {
       // Request permission
       const permission = await Notification.requestPermission()
-      
+
       if (permission !== 'granted') {
+        const message = 'Notification permission denied'
         setState(prev => ({
           ...prev,
           isLoading: false,
           permission,
-          error: 'Notification permission denied'
+          error: message
         }))
-        return false
+        return { success: false, error: message }
       }
 
       // Get service worker registration
@@ -137,7 +147,12 @@ export function usePushNotifications() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to register push token')
+        // Include the server's status/body so the toast can show something
+        // more useful than a bare "Failed to register push token" when this
+        // is the actual failure point (e.g. a 401 from an expired session,
+        // or a validation error from the API route).
+        const bodyText = await response.text().catch(() => '')
+        throw new Error(`Failed to register push token (${response.status}): ${bodyText || 'no response body'}`)
       }
 
       setState({
@@ -148,14 +163,15 @@ export function usePushNotifications() {
         error: null
       })
 
-      return true
+      return { success: true, error: null }
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to subscribe'
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : 'Failed to subscribe'
+        error: message
       }))
-      return false
+      return { success: false, error: message }
     }
   }, [])
 
