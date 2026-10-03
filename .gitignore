@@ -10,3 +10,6 @@ node_modules/
 .env*.local
 .DS_Store
 .vercel
+
+# TypeScript incremental build cache (machine-local, not meant to be committed)
+*.tsbuildinfo
