@@ -651,7 +651,7 @@ export default function FamilyPage() {
             <div>
               <CardTitle className="text-lg">Children</CardTitle>
               <CardDescription>
-                {family.children?.length || 0} of {access.limits.maxChildren === Infinity ? 'unlimited' : access.limits.maxChildren}
+                {family.children?.length || 0} of {access.limits.maxChildren === -1 ? 'unlimited' : access.limits.maxChildren}
               </CardDescription>
             </div>
             <Dialog open={addChildOpen} onOpenChange={setAddChildOpen}>
@@ -803,7 +803,7 @@ export default function FamilyPage() {
                           {child.displayName}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
-                          {child.permissions?.locationSharingEnabled && access.hasPremium && (
+                          {child.permissions?.locationSharingEnabled && access.featureFlags.locationSharing && (
                             <Badge variant="outline" className="text-xs">
                               <MapPin className="w-3 h-3 mr-1" />
                               Location On

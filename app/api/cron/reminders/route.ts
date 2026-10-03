@@ -3,6 +3,7 @@ import { sql } from "@/lib/db"
 import { sendPushToUser } from "@/lib/services/push"
 import { sendEmail, isResendConfigured } from "@/lib/services/email"
 import { sendSMS, isTwilioConfigured } from "@/lib/services/sms"
+import { tierHasFeature } from "@/lib/subscription-tiers"
 
 // This endpoint processes event reminders, refreshes digest cache, and sends weekly digest on Sundays
 // Runs daily at 8 AM UTC - combined into single cron for Hobby account limit
@@ -163,9 +164,10 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Check if family has SMS/Phone alert features based on subscription
-        // Basic ($3.99): SMS notifications enabled
-        // Premium ($7.99): Phone alerts + SMS enabled
+        // Check if family has SMS/Phone alert features based on subscription.
+        // Reads the same per-tier flags lib/subscription-tiers.ts defines
+        // for the in-app UI, so this enforcement can't silently drift from
+        // what Settings tells the user they have.
         const familySubscription = await sql`
           SELECT tier FROM subscriptions
           WHERE family_id = ${event.family_id}
@@ -174,8 +176,8 @@ export async function GET(request: NextRequest) {
         `
 
         const tier = familySubscription.length > 0 ? familySubscription[0].tier : 'FREE'
-        const hasSmsNotifications = tier === 'PREMIUM' || tier === 'PREMIUM_PLUS'
-        const hasPhoneAlerts = tier === 'PREMIUM_PLUS'
+        const hasSmsNotifications = tierHasFeature(tier, 'smsNotifications')
+        const hasPhoneAlerts = tierHasFeature(tier, 'phoneAlerts')
 
         // Send SMS only when: the user toggled sms_enabled on in Settings,
         // AND the family's subscription tier actually grants SMS (business

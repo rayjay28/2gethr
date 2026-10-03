@@ -3,6 +3,10 @@
 import useSWR from 'swr'
 import { useCallback } from 'react'
 import { authFetch } from './use-auth'
+import {
+  listTierDefinitions,
+  type TierFeatureFlags,
+} from '@/lib/subscription-tiers'
 
 export interface Subscription {
   id: string
@@ -18,7 +22,16 @@ export interface Subscription {
 export interface PremiumAccess {
   hasPremium: boolean
   tier: string
+  /** Human-readable bullets for the current tier (what's shown with a checkmark). */
   features: string[]
+  /**
+   * The actual per-capability booleans for the current tier - e.g.
+   * `featureFlags.smsNotifications`. Prefer this (via `canUseFeature`)
+   * over comparing `tier === 'PREMIUM_PLUS'` by name when deciding
+   * whether to show/gate something, so a tier's entitlements only have
+   * to change in lib/subscription-tiers.ts to take effect everywhere.
+   */
+  featureFlags: TierFeatureFlags
   limits: {
     maxChildren: number
     historyDays: number
@@ -33,6 +46,17 @@ export interface SubscriptionTierInfo {
   description: string
   price: { monthly: number; annual: number }
   features: string[]
+}
+
+const DEFAULT_FEATURE_FLAGS: TierFeatureFlags = {
+  locationSharing: false,
+  geofencing: false,
+  advancedRecurrence: false,
+  exportCalendar: false,
+  prioritySupport: false,
+  phoneAlerts: false,
+  smsNotifications: false,
+  customReminderTimes: false,
 }
 
 interface APISubscriptionResponse {
@@ -50,63 +74,48 @@ interface APISubscriptionResponse {
         maxFamilyMembers: number
         maxSavedPlaces: number
         maxCalendars: number
+        historyDays: number
+        maxChildren: number
         locationSharing: boolean
         geofencing: boolean
         advancedRecurrence: boolean
         exportCalendar: boolean
         prioritySupport: boolean
+        phoneAlerts: boolean
+        smsNotifications: boolean
+        customReminderTimes: boolean
       }
       featureList: string[]
     }
   }
 }
 
+const FREE_ACCESS_FALLBACK: PremiumAccess = {
+  hasPremium: false,
+  tier: 'FREE',
+  features: [],
+  featureFlags: DEFAULT_FEATURE_FLAGS,
+  limits: { maxChildren: 2, historyDays: 30, maxSavedPlaces: 5, maxFamilyMembers: 4, maxCalendars: 2 },
+}
+
 const fetcher = async (url: string): Promise<{ subscription: Subscription | null; access: PremiumAccess }> => {
   const res = await authFetch(url, { credentials: 'include' })
   if (!res.ok) {
     if (res.status === 401) throw new Error('Unauthorized')
-    if (res.status === 404) return {
-      subscription: null,
-      access: {
-        hasPremium: false,
-        tier: 'FREE',
-        features: [],
-        limits: { maxChildren: 2, historyDays: 30, maxSavedPlaces: 5, maxFamilyMembers: 4, maxCalendars: 2 },
-      }
-    }
+    if (res.status === 404) return { subscription: null, access: FREE_ACCESS_FALLBACK }
     throw new Error('Failed to fetch')
   }
-  
+
   const json: APISubscriptionResponse = await res.json()
-  
+
   if (!json.success || !json.data) {
-    return {
-      subscription: null,
-      access: {
-        hasPremium: false,
-        tier: 'FREE',
-        features: [],
-        limits: { maxChildren: 2, historyDays: 30, maxSavedPlaces: 5, maxFamilyMembers: 4, maxCalendars: 2 },
-      }
-    }
+    return { subscription: null, access: FREE_ACCESS_FALLBACK }
   }
-  
+
   const { data } = json
   const tierFeatures = data.tierInfo?.features || {} as Record<string, number | boolean>
   const hasPremium = data.tier !== 'FREE'
-  
-  // Tier-specific limits based on pricing structure
-  // FREE: 2 children, 30 days history
-  // PREMIUM (Basic): 5 children, 90 days history, SMS notifications
-  // PREMIUM_PLUS (Premium): unlimited children, 365 days history, phone alerts
-  const tierLimits = {
-    FREE: { maxChildren: 2, historyDays: 30 },
-    PREMIUM: { maxChildren: 5, historyDays: 90 },
-    PREMIUM_PLUS: { maxChildren: -1, historyDays: 365 }, // -1 = unlimited
-  }
-  
-  const currentTierLimits = tierLimits[data.tier as keyof typeof tierLimits] || tierLimits.FREE
-  
+
   return {
     subscription: data.id ? {
       id: data.id,
@@ -122,9 +131,23 @@ const fetcher = async (url: string): Promise<{ subscription: Subscription | null
       hasPremium,
       tier: data.tier,
       features: data.tierInfo?.featureList || [],
+      // The real per-capability flags, straight from the API's tierInfo -
+      // this is what makes it possible to check "can this user actually
+      // use SMS notifications/location sharing/etc" instead of only
+      // knowing the tier name.
+      featureFlags: {
+        locationSharing: !!tierFeatures.locationSharing,
+        geofencing: !!tierFeatures.geofencing,
+        advancedRecurrence: !!tierFeatures.advancedRecurrence,
+        exportCalendar: !!tierFeatures.exportCalendar,
+        prioritySupport: !!tierFeatures.prioritySupport,
+        phoneAlerts: !!tierFeatures.phoneAlerts,
+        smsNotifications: !!tierFeatures.smsNotifications,
+        customReminderTimes: !!tierFeatures.customReminderTimes,
+      },
       limits: {
-        maxChildren: currentTierLimits.maxChildren,
-        historyDays: currentTierLimits.historyDays,
+        maxChildren: (tierFeatures.maxChildren as number) ?? 2,
+        historyDays: (tierFeatures.historyDays as number) ?? 30,
         maxSavedPlaces: (tierFeatures.maxSavedPlaces as number) || 5,
         maxFamilyMembers: (tierFeatures.maxFamilyMembers as number) || 4,
         maxCalendars: (tierFeatures.maxCalendars as number) || 2,
@@ -197,19 +220,19 @@ export function useSubscription(familyId: string | null) {
     }
   }, [familyId, mutate])
   
-  const canUseFeature = useCallback((feature: string) => {
+  // Checks the real per-capability flag for the family's current tier -
+  // e.g. canUseFeature('smsNotifications') - rather than the old
+  // (unused, and broken: it compared a feature *key* against the
+  // human-readable bullet *text*, so it could never actually match
+  // anything) string-matching against the display featureList.
+  const canUseFeature = useCallback((feature: keyof TierFeatureFlags) => {
     if (!data?.access) return false
-    return data.access.features.includes(feature)
+    return !!data.access.featureFlags[feature]
   }, [data])
-  
+
   return {
     subscription: data?.subscription || null,
-    access: data?.access || {
-      hasPremium: false,
-      tier: 'FREE',
-      features: [],
-      limits: { maxChildren: 2, historyDays: 30, maxSavedPlaces: 5, maxFamilyMembers: 4, maxCalendars: 2 },
-    },
+    access: data?.access || FREE_ACCESS_FALLBACK,
     isLoading,
     error,
     startTrial,
@@ -219,47 +242,15 @@ export function useSubscription(familyId: string | null) {
   }
 }
 
+// Pulled from the same lib/subscription-tiers.ts definitions the backend
+// uses, instead of a separately hand-maintained (and previously
+// out-of-date - $3.99/$7.99 here vs $2.99/$4.99 on the public pricing
+// page) copy.
 export function useSubscriptionTiers(): SubscriptionTierInfo[] {
-  return [
-    {
-      name: 'Free',
-      description: 'Basic family coordination',
-      price: { monthly: 0, annual: 0 },
-      features: [
-        'Up to 2 children',
-        'Shared family calendar',
-        'Basic event notifications',
-        '30 days history',
-        'Email support',
-      ],
-    },
-    {
-      name: 'Basic',
-      description: 'Enhanced family features',
-      price: { monthly: 3.99, annual: 39.90 },
-      features: [
-        'Up to 5 children',
-        'Advanced reminder settings',
-        'Complex recurring events',
-        '90 days history',
-        'SMS notifications',
-        'Priority support',
-      ],
-    },
-    {
-      name: 'Premium',
-      description: 'Full family safety suite',
-      price: { monthly: 7.99, annual: 79.90 },
-      features: [
-        'Unlimited children',
-        'Real-time location sharing',
-        'Geofence alerts',
-        '1 year history',
-        'Phone alert notifications',
-        'Custom reminder times',
-        'Family activity reports',
-        '24/7 priority support',
-      ],
-    },
-  ]
+  return listTierDefinitions().map((def) => ({
+    name: def.name,
+    description: def.description,
+    price: { monthly: def.priceMonthlyCents / 100, annual: def.priceAnnualCents / 100 },
+    features: def.featureList,
+  }))
 }

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SUBSCRIPTION_TIERS, centsToDisplay } from '@/lib/subscription-tiers'
 
 interface FamilyMemberLocation {
   memberId: string
@@ -430,7 +431,7 @@ export default function LocationPage() {
 
   // Show upgrade prompt if subscription doesn't include location sharing
   // Only show upgrade prompt if we have subscription data AND user is not on Premium
-  const hasLocationAccess = access?.tier === 'PREMIUM_PLUS'
+  const hasLocationAccess = !!access?.featureFlags.locationSharing
   
   if (subscriptionError || (access && !hasLocationAccess)) {
     return (
@@ -448,7 +449,7 @@ export default function LocationPage() {
               <Crown className="mx-auto h-12 w-12 text-amber-500" />
               <h3 className="mt-4 text-lg font-medium">Premium Feature</h3>
               <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
-                Real-time location sharing is available exclusively with our Premium plan ($7.99/month). 
+                Real-time location sharing is available exclusively with our Premium plan (${centsToDisplay(SUBSCRIPTION_TIERS.PREMIUM_PLUS.priceMonthlyCents)}/month).
                 Upgrade to track your family members&apos; locations, set up geofence alerts, and keep everyone safe.
               </p>
               <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">

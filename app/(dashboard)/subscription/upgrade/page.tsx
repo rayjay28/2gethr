@@ -21,36 +21,26 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SUBSCRIPTION_TIERS } from '@/lib/subscription-tiers'
 
+// Sourced from lib/subscription-tiers.ts rather than a hand-typed copy, so
+// this checkout page can't go out of sync with what /pricing and
+// /subscription advertise (this page's numbers happened to already match
+// when this change was made, but the same duplication is what let the
+// public pricing page drift to $2.99/$4.99 while this one said $3.99/$7.99).
 const tiers = {
   PREMIUM: {
-    name: 'Basic',
-    description: 'Enhanced family features',
-    features: [
-      'Up to 5 children',
-      'Advanced reminder settings',
-      'Complex recurring events',
-      '90 days history',
-      'SMS notifications',
-      'Priority support'
-    ],
-    price: { monthly: 3.99, annual: 39.90 }
+    name: SUBSCRIPTION_TIERS.PREMIUM.name,
+    description: SUBSCRIPTION_TIERS.PREMIUM.description,
+    features: SUBSCRIPTION_TIERS.PREMIUM.featureList,
+    price: { monthly: SUBSCRIPTION_TIERS.PREMIUM.priceMonthlyCents / 100, annual: SUBSCRIPTION_TIERS.PREMIUM.priceAnnualCents / 100 },
   },
   PREMIUM_PLUS: {
-    name: 'Premium',
-    description: 'Full family safety suite',
-    features: [
-      'Unlimited children',
-      'Real-time location sharing',
-      'Geofence alerts',
-      '1 year history',
-      'Phone alert notifications',
-      'Custom reminder times',
-      'Family activity reports',
-      '24/7 priority support'
-    ],
-    price: { monthly: 7.99, annual: 79.90 }
-  }
+    name: SUBSCRIPTION_TIERS.PREMIUM_PLUS.name,
+    description: SUBSCRIPTION_TIERS.PREMIUM_PLUS.description,
+    features: SUBSCRIPTION_TIERS.PREMIUM_PLUS.featureList,
+    price: { monthly: SUBSCRIPTION_TIERS.PREMIUM_PLUS.priceMonthlyCents / 100, annual: SUBSCRIPTION_TIERS.PREMIUM_PLUS.priceAnnualCents / 100 },
+  },
 }
 
 // Next.js requires any component that calls useSearchParams() to be wrapped

@@ -129,9 +129,11 @@ export default function SettingsPage() {
     }
   }, [pushNotifications.isLoading, pushNotifications.isSubscribed, settingsLoading])
 
-  // Check if user has SMS feature based on subscription (Basic or Premium)
-  const hasSmsFeature = access?.tier === 'PREMIUM' || access?.tier === 'PREMIUM_PLUS'
-  const hasPhoneAlerts = access?.tier === 'PREMIUM_PLUS'
+  // Read the real per-capability flags for the family's tier (see
+  // lib/subscription-tiers.ts) instead of hardcoding which tier names
+  // happen to include SMS/phone alerts today.
+  const hasSmsFeature = !!access?.featureFlags.smsNotifications
+  const hasPhoneAlerts = !!access?.featureFlags.phoneAlerts
 
   const handleToggle = async (key: keyof typeof settings) => {
     const newValue = !settings[key]

@@ -181,8 +181,7 @@ export default function SubscriptionPage() {
             </div>
             <div className="text-center p-3 rounded-lg bg-muted/50">
               <div className="text-2xl font-bold">
-                {/* Check if tier has location sharing (PREMIUM_PLUS only) */}
-                {access.tier === 'PREMIUM_PLUS' ? (
+                {access.featureFlags.locationSharing ? (
                   <Check className="h-6 w-6 mx-auto text-primary" />
                 ) : (
                   <X className="h-6 w-6 mx-auto text-muted-foreground" />
@@ -190,6 +189,36 @@ export default function SubscriptionPage() {
               </div>
               <div className="text-xs text-muted-foreground">Location</div>
             </div>
+          </div>
+
+          {/* What's included - every gated capability, spelled out for this
+              specific family's tier, not just the 4 headline stats above. */}
+          <div className="pt-2">
+            <p className="text-sm font-medium mb-3">What&apos;s included in {formatTierName(currentTier)}</p>
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-6 text-sm">
+              {[
+                { key: 'locationSharing' as const, label: 'Real-time location sharing' },
+                { key: 'geofencing' as const, label: 'Geofence alerts' },
+                { key: 'smsNotifications' as const, label: 'SMS notifications' },
+                { key: 'phoneAlerts' as const, label: 'Phone call alerts' },
+                { key: 'customReminderTimes' as const, label: 'Custom reminder times' },
+                { key: 'advancedRecurrence' as const, label: 'Advanced/complex recurring events' },
+                { key: 'exportCalendar' as const, label: 'Calendar export' },
+                { key: 'prioritySupport' as const, label: 'Priority support' },
+              ].map(({ key, label }) => {
+                const included = access.featureFlags[key]
+                return (
+                  <li key={key} className="flex items-center gap-2">
+                    {included ? (
+                      <Check className="h-4 w-4 text-primary shrink-0" />
+                    ) : (
+                      <X className="h-4 w-4 text-muted-foreground shrink-0" />
+                    )}
+                    <span className={included ? '' : 'text-muted-foreground'}>{label}</span>
+                  </li>
+                )
+              })}
+            </ul>
           </div>
         </CardContent>
         {access.hasPremium && !isTrialing && (

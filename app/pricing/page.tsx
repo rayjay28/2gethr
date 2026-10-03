@@ -8,55 +8,21 @@ import { Badge } from '@/components/ui/badge'
 import { Check, Sparkles } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { cn } from '@/lib/utils'
+import { listTierDefinitions } from '@/lib/subscription-tiers'
 
-const tiers = [
-  {
-    name: 'Free',
-    description: 'Basic family coordination',
-    price: { monthly: 0, annual: 0 },
-    features: [
-      'Up to 2 children',
-      'Shared family calendar',
-      'Basic event notifications',
-      '30 days history',
-      'Email support',
-    ],
-    cta: 'Get Started',
-    popular: false,
-  },
-  {
-    name: 'Basic',
-    description: 'Enhanced family features',
-    price: { monthly: 2.99, annual: 29.90 },
-    features: [
-      'Up to 5 children',
-      'Advanced reminder settings',
-      'Complex recurring events',
-      '90 days history',
-      'SMS notifications',
-      'Priority support',
-    ],
-    cta: 'Start Free Trial',
-    popular: false,
-  },
-  {
-    name: 'Premium',
-    description: 'Full family safety suite',
-    price: { monthly: 4.99, annual: 49.90 },
-    features: [
-      'Unlimited children',
-      'Real-time location sharing',
-      'Geofence alerts',
-      '1 year history',
-      'Phone alert notifications',
-      'Custom reminder times',
-      'Family activity reports',
-      '24/7 priority support',
-    ],
-    cta: 'Start Free Trial',
-    popular: true,
-  },
-]
+// Pulled from lib/subscription-tiers.ts (the same data the in-app
+// /subscription page reads) so this public page can't drift out of sync
+// with what members actually see - and are actually charged - once signed
+// in, the way it previously did (this page quoted $2.99/$4.99 after Basic
+// and Premium were repriced to $3.99/$7.99 everywhere else).
+const tiers = listTierDefinitions().map((def) => ({
+  name: def.name,
+  description: def.description,
+  price: { monthly: def.priceMonthlyCents / 100, annual: def.priceAnnualCents / 100 },
+  features: def.featureList,
+  cta: def.key === 'FREE' ? 'Get Started' : 'Start Free Trial',
+  popular: def.key === 'PREMIUM_PLUS',
+}))
 
 export default function PricingPage() {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual')

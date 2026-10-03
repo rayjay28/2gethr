@@ -1,99 +1,41 @@
 import { NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import { getUserFromRequest } from "@/lib/auth"
+import { SUBSCRIPTION_TIERS as TIER_DEFINITIONS } from "@/lib/subscription-tiers"
 
-// Subscription tier definitions
-// FREE: $0, PREMIUM (Basic): $3.99/mo, PREMIUM_PLUS (Premium): $7.99/mo
-export const SUBSCRIPTION_TIERS = {
-  FREE: {
-    name: "Free",
-    description: "Basic family coordination",
-    priceMonthly: 0,
-    priceYearly: 0,
-    features: {
-      maxFamilyMembers: 4,
-      maxChildren: 2,
-      maxSavedPlaces: 5,
-      maxCalendars: 2,
-      locationSharing: false,
-      geofencing: false,
-      advancedRecurrence: false,
-      exportCalendar: false,
-      prioritySupport: false,
-      phoneAlerts: false,
-      smsNotifications: false,
-      customReminderTimes: false,
-      historyDays: 30,
+// Subscription tier definitions now live in lib/subscription-tiers.ts (the
+// single shared source for pricing/limits/features used by this route, the
+// in-app subscription UI, and the public pricing page). Re-shaped here into
+// the flatter { priceMonthly, priceYearly, features: {...limits+flags} }
+// response shape the existing frontend already expects, so no API
+// consumers break.
+export const SUBSCRIPTION_TIERS = Object.fromEntries(
+  Object.entries(TIER_DEFINITIONS).map(([key, def]) => [
+    key,
+    {
+      name: def.name,
+      description: def.description,
+      priceMonthly: def.priceMonthlyCents,
+      priceYearly: def.priceAnnualCents,
+      features: {
+        maxFamilyMembers: def.limits.maxFamilyMembers,
+        maxChildren: def.limits.maxChildren,
+        maxSavedPlaces: def.limits.maxSavedPlaces,
+        maxCalendars: def.limits.maxCalendars,
+        historyDays: def.limits.historyDays,
+        ...def.features,
+      },
+      featureList: def.featureList,
     },
-    featureList: [
-      "Up to 2 children",
-      "Shared family calendar",
-      "Basic event notifications",
-      "30 days history",
-      "Email support",
-    ],
-  },
-  PREMIUM: {
-    name: "Basic",
-    description: "Enhanced family features",
-    priceMonthly: 399, // $3.99
-    priceYearly: 3990, // $39.90
-    features: {
-      maxFamilyMembers: 6,
-      maxChildren: 5,
-      maxSavedPlaces: 15,
-      maxCalendars: 5,
-      locationSharing: false,
-      geofencing: false,
-      advancedRecurrence: true,
-      exportCalendar: true,
-      prioritySupport: true,
-      phoneAlerts: false,
-      smsNotifications: true,
-      customReminderTimes: false,
-      historyDays: 90,
-    },
-    featureList: [
-      "Up to 5 children",
-      "Advanced reminder settings",
-      "Complex recurring events",
-      "90 days history",
-      "SMS notifications",
-      "Priority support",
-    ],
-  },
-  PREMIUM_PLUS: {
-    name: "Premium",
-    description: "Full family safety suite",
-    priceMonthly: 799, // $7.99
-    priceYearly: 7990, // $79.90
-    features: {
-      maxFamilyMembers: 12,
-      maxChildren: -1, // Unlimited
-      maxSavedPlaces: 50,
-      maxCalendars: 20,
-      locationSharing: true,
-      geofencing: true,
-      advancedRecurrence: true,
-      exportCalendar: true,
-      prioritySupport: true,
-      phoneAlerts: true,
-      smsNotifications: true,
-      customReminderTimes: true,
-      historyDays: 365,
-    },
-    featureList: [
-      "Unlimited children",
-      "Real-time location sharing",
-      "Geofence alerts",
-      "1 year history",
-      "Phone alert notifications",
-      "Custom reminder times",
-      "Family activity reports",
-      "24/7 priority support",
-    ],
-  },
-}
+  ])
+) as Record<string, {
+  name: string
+  description: string
+  priceMonthly: number
+  priceYearly: number
+  features: Record<string, number | boolean>
+  featureList: string[]
+}>
 
 // Get current family subscription
 export async function GET(request: NextRequest) {

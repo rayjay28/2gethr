@@ -1,4 +1,5 @@
 import { sql } from '@/lib/db'
+import { SUBSCRIPTION_TIERS as TIER_DEFINITIONS, getTierDefinition } from '@/lib/subscription-tiers'
 
 // Local enums to match database
 const SubscriptionTier = {
@@ -28,33 +29,36 @@ export const PREMIUM_FEATURES = {
   SMS_NOTIFICATIONS: "sms_notifications",
 } as const
 
-// Feature access by tier
-// FREE: $0, PREMIUM (Basic): $2.99/mo, PREMIUM_PLUS (Premium): $4.99/mo
+// Feature access by tier, derived from the shared tier definitions in
+// lib/subscription-tiers.ts (rather than a second hand-maintained copy) so
+// this stays in sync with what the pricing page and in-app subscription UI
+// actually advertise. Maps each tier's boolean feature flags onto the
+// PREMIUM_FEATURES string keys that canUsePremiumFeature() checks against.
+function deriveTierFeatureKeys(tier: string): string[] {
+  const def = getTierDefinition(tier)
+  const keys: string[] = []
+  if (def.limits.maxChildren === -1) keys.push(PREMIUM_FEATURES.UNLIMITED_CHILDREN)
+  if (def.features.advancedRecurrence) keys.push(PREMIUM_FEATURES.ADVANCED_REMINDERS, PREMIUM_FEATURES.ADVANCED_RECURRING)
+  if (def.features.customReminderTimes) keys.push(PREMIUM_FEATURES.CUSTOM_REMINDER_TIMES)
+  if (def.features.locationSharing) keys.push(PREMIUM_FEATURES.LOCATION_SHARING)
+  if (def.features.geofencing) keys.push(PREMIUM_FEATURES.GEOFENCE_ALERTS)
+  if (def.limits.historyDays >= 365) keys.push(PREMIUM_FEATURES.EXTENDED_HISTORY)
+  if (def.features.phoneAlerts) keys.push(PREMIUM_FEATURES.PHONE_ALERTS)
+  if (def.features.smsNotifications) keys.push(PREMIUM_FEATURES.SMS_NOTIFICATIONS)
+  return keys
+}
+
 const TIER_FEATURES: Record<string, string[]> = {
-  [SubscriptionTier.FREE]: [],
-  [SubscriptionTier.PREMIUM]: [
-    PREMIUM_FEATURES.ADVANCED_REMINDERS,
-    PREMIUM_FEATURES.ADVANCED_RECURRING,
-    PREMIUM_FEATURES.SMS_NOTIFICATIONS,
-  ],
-  [SubscriptionTier.PREMIUM_PLUS]: [
-    PREMIUM_FEATURES.UNLIMITED_CHILDREN,
-    PREMIUM_FEATURES.ADVANCED_REMINDERS,
-    PREMIUM_FEATURES.CUSTOM_REMINDER_TIMES,
-    PREMIUM_FEATURES.LOCATION_SHARING,
-    PREMIUM_FEATURES.GEOFENCE_ALERTS,
-    PREMIUM_FEATURES.ADVANCED_RECURRING,
-    PREMIUM_FEATURES.EXTENDED_HISTORY,
-    PREMIUM_FEATURES.PHONE_ALERTS,
-    PREMIUM_FEATURES.SMS_NOTIFICATIONS,
-  ],
+  [SubscriptionTier.FREE]: deriveTierFeatureKeys(SubscriptionTier.FREE),
+  [SubscriptionTier.PREMIUM]: deriveTierFeatureKeys(SubscriptionTier.PREMIUM),
+  [SubscriptionTier.PREMIUM_PLUS]: deriveTierFeatureKeys(SubscriptionTier.PREMIUM_PLUS),
 }
 
 // Tier limits
 const TIER_LIMITS = {
-  [SubscriptionTier.FREE]: { maxChildren: 2, historyDays: 30 },
-  [SubscriptionTier.PREMIUM]: { maxChildren: 5, historyDays: 90 },
-  [SubscriptionTier.PREMIUM_PLUS]: { maxChildren: -1, historyDays: 365 }, // -1 = unlimited
+  [SubscriptionTier.FREE]: { maxChildren: TIER_DEFINITIONS.FREE.limits.maxChildren, historyDays: TIER_DEFINITIONS.FREE.limits.historyDays },
+  [SubscriptionTier.PREMIUM]: { maxChildren: TIER_DEFINITIONS.PREMIUM.limits.maxChildren, historyDays: TIER_DEFINITIONS.PREMIUM.limits.historyDays },
+  [SubscriptionTier.PREMIUM_PLUS]: { maxChildren: TIER_DEFINITIONS.PREMIUM_PLUS.limits.maxChildren, historyDays: TIER_DEFINITIONS.PREMIUM_PLUS.limits.historyDays }, // -1 = unlimited
 }
 
 export interface SubscriptionInfo {
@@ -374,48 +378,11 @@ export async function startFreeTrial(
  * Get subscription tier display info
  */
 export function getSubscriptionTierInfo(tier: string) {
-  const tiers = {
-    [SubscriptionTier.FREE]: {
-      name: "Free",
-      description: "Basic family coordination",
-      price: { monthly: 0, annual: 0 },
-      features: [
-        "Up to 2 children",
-        "Shared family calendar",
-        "Basic event notifications",
-        "30 days history",
-        "Email support",
-      ],
-    },
-    [SubscriptionTier.PREMIUM]: {
-      name: "Basic",
-      description: "Enhanced family features",
-      price: { monthly: 2.99, annual: 29.90 },
-      features: [
-        "Up to 5 children",
-        "Advanced reminder settings",
-        "Complex recurring events",
-        "90 days history",
-        "SMS notifications",
-        "Priority support",
-      ],
-    },
-    [SubscriptionTier.PREMIUM_PLUS]: {
-      name: "Premium",
-      description: "Full family safety suite",
-      price: { monthly: 4.99, annual: 49.90 },
-      features: [
-        "Unlimited children",
-        "Real-time location sharing",
-        "Geofence alerts",
-        "1 year history",
-        "Phone alert notifications",
-        "Custom reminder times",
-        "Family activity reports",
-        "24/7 priority support",
-      ],
-    },
+  const def = getTierDefinition(tier)
+  return {
+    name: def.name,
+    description: def.description,
+    price: { monthly: def.priceMonthlyCents / 100, annual: def.priceAnnualCents / 100 },
+    features: def.featureList,
   }
-  
-  return tiers[tier] || tiers[SubscriptionTier.FREE]
 }
