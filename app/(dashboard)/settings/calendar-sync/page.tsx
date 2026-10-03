@@ -91,10 +91,17 @@ function CalendarSyncContent() {
         },
       })
     }
-    if (appleConnection?.syncEnabled) {
+    // externalCalendarId is only ever set once Apple's connect flow fully
+    // succeeds (see app/api/calendar-sync/apple/connect) - a connection row
+    // can have syncEnabled=true with no credentials (an incomplete/stale
+    // connect attempt), and that's not "enabled", it's broken. Skip it
+    // instead of running a sync that's guaranteed to fail, and skip it
+    // entirely for accounts that never connected Apple at all.
+    const appleFullyConnected = !!appleConnection?.externalCalendarId
+    if (appleConnection?.syncEnabled && appleFullyConnected) {
       jobs.push({ label: 'Apple Calendar', run: () => syncNow('apple') })
     }
-    if (appleConnection?.syncTasks) {
+    if (appleConnection?.syncTasks && appleFullyConnected) {
       jobs.push({
         label: 'Apple Reminders',
         run: async () => {
@@ -740,6 +747,13 @@ function AppleCalendarCard() {
   const [connecting, setConnecting] = useState(false)
   const [syncing, setSyncing] = useState(false)
 
+  // A connection row can exist (syncEnabled=true) without ever having
+  // stored real credentials - externalCalendarId is only set once the
+  // connect flow actually succeeds. Treat that as "needs reconnecting",
+  // not "connected", so the broken state doesn't masquerade as a working
+  // one with controls that just fail when used.
+  const isIncomplete = !!appleConnection && !appleConnection.externalCalendarId
+
   const handleConnect = async () => {
     if (!appleId || !appPassword) {
       toast.error('Enter your Apple ID and an app-specific password')
@@ -784,7 +798,7 @@ function AppleCalendarCard() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {appleConnection ? (
+        {appleConnection && !isIncomplete ? (
           <>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
@@ -876,6 +890,22 @@ function AppleCalendarCard() {
           </>
         ) : (
           <div className="space-y-3">
+            {isIncomplete && (
+              <div className="flex items-start justify-between gap-3 p-3 rounded-lg bg-yellow-500/10 text-yellow-700 border border-yellow-500/20 text-sm">
+                <p>
+                  This Apple connection is missing its saved password and needs to be redone -
+                  enter your Apple ID and an app-specific password below to reconnect it.
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 h-7 px-2 text-yellow-700 hover:text-yellow-800"
+                  onClick={() => appleConnection && disconnect(appleConnection.id)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            )}
             <p className="text-sm text-muted-foreground">
               Apple requires an app-specific password (not your regular Apple ID password) for
               third-party apps like Togethr. Generate one at{' '}
