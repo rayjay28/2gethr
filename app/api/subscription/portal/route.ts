@@ -52,6 +52,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // A stored customer ID can point at a Customer that doesn't exist under
+    // the currently configured Stripe account/mode (e.g. a row written
+    // before this account's live-mode keys were set up, or data carried
+    // over from a different Stripe account). Verify it actually resolves
+    // before asking Stripe for a portal session for it — otherwise this
+    // 500s with "No such customer" instead of a clear, actionable error.
+    try {
+      const existing = await stripe.customers.retrieve(customerId)
+      if (existing.deleted) {
+        return NextResponse.json(
+          { error: "No billing account found for this family yet" },
+          { status: 400 }
+        )
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "No billing account found for this family yet" },
+        { status: 400 }
+      )
+    }
+
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "http://localhost:3000"
 
     const portalSession = await stripe.billingPortal.sessions.create({
