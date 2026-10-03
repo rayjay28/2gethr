@@ -223,6 +223,55 @@ export async function GET(request: NextRequest) {
 
     console.log('[Cron] Digest recipients refresh:', digestStats[0])
 
+    // Auto-archive completed/cancelled tasks and past events so the Archive
+    // page actually fills up as an audit trail, instead of only being
+    // reachable through the (UI-unreachable) manual bulk-archive endpoints.
+    // Grace windows keep items visible in the normal lists for a bit after
+    // they're done, rather than vanishing into the Archive the instant a
+    // task is checked off or an event ends:
+    //   - tasks: COMPLETED/CANCELLED for at least 7 days
+    //   - events: ended at least 1 day ago
+    // task_history.user_id is NOT NULL (no "system" actor), so each
+    // auto-archived task's history row is attributed to the task's own
+    // creator (created_by_id), with new_value marking it as an automated
+    // action distinct from the user-triggered bulk endpoint's {"bulk":true}.
+    let tasksArchived = 0
+    let eventsArchived = 0
+    try {
+      const archivedTasks = await sql`
+        UPDATE tasks
+        SET status = 'ARCHIVED', updated_at = NOW()
+        WHERE status IN ('COMPLETED', 'CANCELLED')
+        AND updated_at < NOW() - INTERVAL '7 days'
+        RETURNING id, created_by_id
+      `
+
+      for (const task of archivedTasks) {
+        if (!task.created_by_id) continue
+        await sql`
+          INSERT INTO task_history (task_id, user_id, action, new_value)
+          VALUES (${task.id}, ${task.created_by_id}, 'ARCHIVED', '{"auto": true}'::jsonb)
+        `
+      }
+      tasksArchived = archivedTasks.length
+
+      const archivedEvents = await sql`
+        UPDATE events e
+        SET status = 'ARCHIVED'
+        FROM calendars c
+        WHERE e.calendar_id = c.id
+        AND e.end_time < NOW() - INTERVAL '1 day'
+        AND e.status != 'ARCHIVED'
+        AND e.status != 'CANCELLED'
+        RETURNING e.id
+      `
+      eventsArchived = archivedEvents.length
+
+      console.log(`[Cron] Auto-archive: ${tasksArchived} task(s), ${eventsArchived} event(s)`)
+    } catch (archiveError) {
+      console.error('[Cron] Auto-archive error (non-fatal):', archiveError)
+    }
+
     // On Sundays, also trigger weekly digest sending
     let weeklyDigestSent = 0
     const dayOfWeek = now.getUTCDay() // 0 = Sunday
@@ -252,6 +301,8 @@ export async function GET(request: NextRequest) {
       success: true,
       remindersSent,
       weeklyDigestSent,
+      tasksArchived,
+      eventsArchived,
       digestStats: digestStats[0],
       timestamp: now.toISOString(),
     })
