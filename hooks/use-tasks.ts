@@ -85,6 +85,7 @@ export async function createTask(taskData: {
   category?: string
   isRecurring?: boolean
   recurrenceRule?: string
+  notifyChannels?: string[]
 }) {
   const res = await authFetch('/api/tasks', {
     method: 'POST',

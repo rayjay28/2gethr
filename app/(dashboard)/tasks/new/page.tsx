@@ -12,6 +12,10 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
+import {
+  NotificationChannelsPicker,
+  type NotificationChannelValue,
+} from '@/components/notification-channels-picker'
 import { ArrowLeft, ListTodo } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -37,6 +41,7 @@ export default function NewTaskPage() {
   const [requiresApproval, setRequiresApproval] = useState(false)
   const [isRecurring, setIsRecurring] = useState(false)
   const [recurrenceRule, setRecurrenceRule] = useState<string>('daily')
+  const [notifyChannels, setNotifyChannels] = useState<NotificationChannelValue[]>([])
   const [submitting, setSubmitting] = useState(false)
 
   // Get members and children from detailed family data
@@ -85,6 +90,7 @@ export default function NewTaskPage() {
         category: category === 'general' ? undefined : category,
         isRecurring,
         recurrenceRule: isRecurring ? recurrenceRule : undefined,
+        notifyChannels: notifyChannels.length > 0 ? notifyChannels : undefined,
       })
 
       toast.success('Task created successfully')
@@ -249,6 +255,14 @@ export default function NewTaskPage() {
               />
               <p className="text-xs text-muted-foreground">Set a reminder notification for this task</p>
             </div>
+
+            {/* Notification Channels */}
+            <NotificationChannelsPicker
+              selected={notifyChannels}
+              onChange={setNotifyChannels}
+              label="Notify assignee via"
+              helpText="Leave unchecked to use the assignee's own notification settings."
+            />
 
             {/* Priority and Category */}
             <div className="grid gap-4 sm:grid-cols-2">

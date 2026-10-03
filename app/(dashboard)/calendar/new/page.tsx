@@ -19,6 +19,10 @@ import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import {
+  NotificationChannelsPicker,
+  type NotificationChannelValue,
+} from '@/components/notification-channels-picker'
 import { useAuth, authFetch } from '@/hooks/use-auth'
 import { useFamilies, useFamily, FamilyMember, ChildProfile } from '@/hooks/use-family'
 
@@ -90,6 +94,7 @@ function NewEventForm() {
   const [isRecurring, setIsRecurring] = useState(false)
   const [recurrenceRule, setRecurrenceRule] = useState('weekly')
   const [selectedReminders, setSelectedReminders] = useState<number[]>([15]) // Default: 15 min reminder
+  const [notifyChannels, setNotifyChannels] = useState<NotificationChannelValue[]>([])
   const [selectedParticipants, setSelectedParticipants] = useState<Array<{ 
     type: 'member' | 'child'
     id: string
@@ -215,6 +220,7 @@ function NewEventForm() {
           category: formData.category,
           visibility: formData.visibility,
           reminderMinutes: selectedReminders,
+          notifyChannels: notifyChannels.length > 0 ? notifyChannels : undefined,
           isRecurring,
           recurrenceRule: isRecurring ? recurrenceRule : null,
           participants: selectedParticipants.map(p => ({
@@ -568,7 +574,15 @@ function NewEventForm() {
                 You'll receive notifications before the event starts
               </p>
             </div>
-  
+
+            {/* Notification Channels */}
+            <NotificationChannelsPicker
+              selected={notifyChannels}
+              onChange={setNotifyChannels}
+              label="Notify participants via"
+              helpText="Leave unchecked to use each participant's own notification settings."
+            />
+
   {/* Participants */}
   <div className="space-y-2">
   <Label>

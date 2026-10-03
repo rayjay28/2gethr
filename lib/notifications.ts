@@ -70,6 +70,13 @@ export type NotificationType =
   | 'SUBSCRIPTION_ALERT'
   | 'SYSTEM'
 
+// Mirrors NotificationChannel in lib/services/notification-dispatcher.ts
+// (duplicated as a plain string union, not imported, since that module
+// imports createNotification FROM this file - importing the type back
+// would be a circular import for no benefit, as string-literal unions are
+// structurally compatible either way).
+export type NotificationChannel = 'in_app' | 'push' | 'email' | 'sms'
+
 type NotificationData = {
   userId: string
   type: NotificationType
@@ -78,6 +85,15 @@ type NotificationData = {
   data?: Record<string, unknown>
   sendSms?: boolean // If true and user has phone, also send SMS
   sendEmail?: boolean // If true and user has email notifications enabled, also send an email
+  // Per-item channel override (e.g. the notify-channels picker on a task or
+  // event creation form). When provided, it takes priority over sendSms/
+  // sendEmail and over the always-attempt behavior of in_app/push below -
+  // a channel not listed here is skipped entirely for this call, even if
+  // the recipient's own settings would otherwise allow it. When omitted
+  // (the common case - every pre-existing call site), behavior is
+  // unchanged: in_app always written, push always attempted (subject to
+  // the recipient's push_enabled), sms/email gated by the flags above.
+  channels?: NotificationChannel[]
 }
 
 export async function createNotification({
@@ -87,28 +103,34 @@ export async function createNotification({
   body,
   data = {},
   sendSms = false,
-  sendEmail: sendEmailFlag = false
+  sendEmail: sendEmailFlag = false,
+  channels
 }: NotificationData): Promise<{ success: boolean; notificationId?: string; error?: string }> {
   try {
     const notificationId = crypto.randomUUID()
-    
+    const wantsInApp = !channels || channels.includes('in_app')
+    const wantsPush = !channels || channels.includes('push')
+    const wantsSms = channels ? channels.includes('sms') : sendSms
+    const wantsEmail = channels ? channels.includes('email') : sendEmailFlag
+
     console.log('[Notification] Creating notification:', { userId, type, title })
-    
-    await sql`
-      INSERT INTO notifications (id, user_id, type, title, body, data, is_read, created_at)
-      VALUES (
-        ${notificationId},
-        ${userId},
-        ${type},
-        ${title},
-        ${body},
-        ${JSON.stringify(data)}::jsonb,
-        false,
-        NOW()
-      )
-    `
-    
-    console.log('[Notification] Created successfully:', notificationId)
+
+    if (wantsInApp) {
+      await sql`
+        INSERT INTO notifications (id, user_id, type, title, body, data, is_read, created_at)
+        VALUES (
+          ${notificationId},
+          ${userId},
+          ${type},
+          ${title},
+          ${body},
+          ${JSON.stringify(data)}::jsonb,
+          false,
+          NOW()
+        )
+      `
+      console.log('[Notification] Created successfully:', notificationId)
+    }
 
     // Every in-app notification also gets a best-effort real push
     // notification, so the two systems this app has accumulated
@@ -123,7 +145,7 @@ export async function createNotification({
     // page toggle writes to - so a user who turned push off there doesn't
     // get a system-level notification anyway (this used to fire
     // unconditionally for every notification type, ignoring the toggle).
-    if (isFirebaseConfigured()) {
+    if (wantsPush && isFirebaseConfigured()) {
       try {
         const pushPrefs = await sql`
           SELECT push_enabled FROM reminder_settings WHERE user_id = ${userId}
@@ -153,7 +175,7 @@ export async function createNotification({
     }
 
     // Check if user has SMS enabled and send if requested
-    if (sendSms) {
+    if (wantsSms) {
       const userSmsPrefs = await sql`
         SELECT u.phone, rs.sms_enabled
         FROM users u
@@ -172,7 +194,7 @@ export async function createNotification({
     // lifecycle event (assign, complete, approve, reject, etc.) ever sent
     // an email at all - createNotification only wrote an in-app row and,
     // optionally, an SMS.
-    if (sendEmailFlag && isResendConfigured()) {
+    if (wantsEmail && isResendConfigured()) {
       try {
         // users has no "name" column (only first_name/last_name), and it's
         // not even used below - selecting it just made this query throw
@@ -212,7 +234,8 @@ export async function notifyTaskAssigned(
   taskTitle: string,
   taskId: string,
   familyId: string,
-  assignedBy: string
+  assignedBy: string,
+  channels?: NotificationChannel[] // from the task's notify_channels column, if the creator picked any
 ): Promise<void> {
   await createNotification({
     userId,
@@ -220,7 +243,9 @@ export async function notifyTaskAssigned(
     title: 'New Task Assigned',
     body: `${assignedBy} assigned you a task: "${taskTitle}"`,
     data: { taskId, familyId },
-    sendSms: true // Will check user preferences before sending
+    sendSms: true, // Will check user preferences before sending
+    sendEmail: true, // Will check user preferences before sending
+    channels
   })
 }
 
@@ -315,7 +340,8 @@ export async function notifyFamilyAboutEvent(
   eventTitle: string,
   eventId: string,
   creatorName: string,
-  excludeUserId?: string
+  excludeUserId?: string,
+  channels?: NotificationChannel[] // from the event's notify_channels column, if the creator picked any
 ): Promise<void> {
   // Notify ALL active family members with linked accounts
   let members
@@ -347,11 +373,17 @@ export async function notifyFamilyAboutEvent(
       type: 'EVENT_CREATED',
       title: 'New Family Event',
       body: `${creatorName} created a new event: "${eventTitle}"`,
-      data: { eventId, familyId, sendSms: !!member.phone }
+      data: { eventId, familyId, sendSms: !!member.phone },
+      sendEmail: true, // Will check user preferences before sending
+      channels
     })
-    
-    // Send SMS if user has phone number
-    if (member.phone) {
+
+    // Send SMS if user has phone number. Gated on the channel override
+    // too (when one is given, 'sms' must be in it), on top of the
+    // existing phone-number check - this direct send bypasses
+    // createNotification's own sms_enabled lookup, which is a pre-existing
+    // quirk left as-is here rather than widened while adding the picker.
+    if (member.phone && (!channels || channels.includes('sms'))) {
       await sendSmsNotification(
         member.phone,
         `FamilyApp: ${creatorName} created a new event: "${eventTitle}". Open the app to view details.`

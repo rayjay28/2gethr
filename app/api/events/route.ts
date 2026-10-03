@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import { getUserFromRequest, checkFamilySubscription, logAuditEvent } from "@/lib/auth"
-import { notifyFamilyAboutEvent } from "@/lib/notifications" // Event notifications
+import { notifyFamilyAboutEvent, type NotificationChannel } from "@/lib/notifications" // Event notifications
 import { z } from "zod"
 
 const createEventSchema = z.object({
@@ -23,6 +23,7 @@ const createEventSchema = z.object({
   category: z.string().optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   reminderMinutes: z.array(z.number().int().min(0)).optional(),
+  notifyChannels: z.array(z.enum(["in_app", "push", "email", "sms"])).optional(),
   participantIds: z.array(z.string().uuid()).optional(),
   participants: z.array(z.object({
     userId: z.string().uuid().optional().nullable(),
@@ -469,7 +470,7 @@ export async function POST(request: NextRequest) {
       INSERT INTO events (
         id, calendar_id, created_by_id, title, description, location,
         saved_place_id, start_time, end_time, is_all_day, status, visibility,
-        color, reminder_minutes, is_recurring, recurrence_rule_id,
+        color, reminder_minutes, notify_channels, is_recurring, recurrence_rule_id,
         created_at, updated_at
       )
   VALUES (
@@ -487,6 +488,7 @@ export async function POST(request: NextRequest) {
         ${validatedData.visibility},
         ${validatedData.color || null},
         ${validatedData.reminderMinutes || [15]},
+        ${validatedData.notifyChannels && validatedData.notifyChannels.length > 0 ? validatedData.notifyChannels : null},
         ${!!validatedData.recurrence},
         ${recurrenceRuleId},
         NOW(), NOW()
@@ -529,7 +531,10 @@ export async function POST(request: NextRequest) {
       validatedData.title,
       eventId,
       creatorName,
-      user.id // Exclude the creator from notifications
+      user.id, // Exclude the creator from notifications
+      validatedData.notifyChannels && validatedData.notifyChannels.length > 0
+        ? (validatedData.notifyChannels as NotificationChannel[])
+        : undefined
     )
 
     return NextResponse.json({

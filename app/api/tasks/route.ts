@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
-import { notifyTaskAssigned } from '@/lib/notifications'
+import { notifyTaskAssigned, type NotificationChannel } from '@/lib/notifications'
 
 // GET - List tasks for the current user's families
 export async function GET(request: NextRequest) {
@@ -140,8 +140,22 @@ export async function POST(request: NextRequest) {
       requiresApproval = false,
       category,
       isRecurring = false,
-      recurrenceRule
+      recurrenceRule,
+      notifyChannels
     } = body
+
+    // Validate notifyChannels is either absent or a plain array of known
+    // channel strings - this gets written straight into a TEXT[] column and
+    // used downstream to gate which notification sends are attempted, so a
+    // malformed value here shouldn't silently corrupt the column or later
+    // throw on the recipient's behalf.
+    const VALID_NOTIFY_CHANNELS: NotificationChannel[] = ['in_app', 'push', 'email', 'sms']
+    const normalizedNotifyChannels: NotificationChannel[] | null =
+      Array.isArray(notifyChannels) && notifyChannels.length > 0
+        ? notifyChannels.filter((c: unknown): c is NotificationChannel =>
+            typeof c === 'string' && (VALID_NOTIFY_CHANNELS as string[]).includes(c)
+          )
+        : null
     
     if (!familyId || !title) {
       return NextResponse.json({ error: 'Family ID and title are required' }, { status: 400 })
@@ -162,13 +176,15 @@ export async function POST(request: NextRequest) {
       INSERT INTO tasks (
         family_id, title, description, created_by_id,
         assigned_to_id, child_profile_id, due_date,
-        priority, category, status, is_recurring, recurrence_rule
+        priority, category, status, is_recurring, recurrence_rule,
+        notify_channels
       ) VALUES (
         ${familyId}, ${title}, ${description || null}, ${user.id},
-        ${assignedToUserId || null}, ${assignedToChildId || null}, 
+        ${assignedToUserId || null}, ${assignedToChildId || null},
         ${dueDate || null},
         ${priority.toUpperCase()}, ${category || 'CHORE'}, 'PENDING',
-        ${isRecurring}, ${isRecurring ? recurrenceRule : null}
+        ${isRecurring}, ${isRecurring ? recurrenceRule : null},
+        ${normalizedNotifyChannels}
       )
       RETURNING *
     `
@@ -182,9 +198,9 @@ export async function POST(request: NextRequest) {
     // Create notification for assigned user
     if (assignedToUserId && assignedToUserId !== user.id) {
       const assignerName = user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'Someone'
-      await notifyTaskAssigned(assignedToUserId, title, task[0].id, familyId, assignerName)
+      await notifyTaskAssigned(assignedToUserId, title, task[0].id, familyId, assignerName, normalizedNotifyChannels || undefined)
     }
-    
+
     // Also notify parents if task is assigned to a child
     if (assignedToChildId) {
       const parents = await sql`
@@ -197,7 +213,7 @@ export async function POST(request: NextRequest) {
       `
       const assignerName = user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'Someone'
       for (const parent of parents) {
-        await notifyTaskAssigned(parent.user_id, title, task[0].id, familyId, assignerName)
+        await notifyTaskAssigned(parent.user_id, title, task[0].id, familyId, assignerName, normalizedNotifyChannels || undefined)
       }
     }
     
