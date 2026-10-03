@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, Trash2, ListTodo, Calendar, Copy, Check } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Trash2, ListTodo, Calendar, Copy, Check, Upload, Link2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -454,6 +454,9 @@ function CalendarSyncContent() {
       {/* Apple Calendar & Reminders (real bidirectional CalDAV sync) */}
       <AppleCalendarCard />
 
+      {/* Generic .ics import - Outlook, Android, or any app that can export/publish a calendar file */}
+      <ImportIcsCard />
+
       {/* Other Calendars (Outlook, and any app that supports calendar subscription URLs) */}
       <Card>
         <CardHeader>
@@ -520,12 +523,137 @@ function CalendarSyncContent() {
             <li>• <strong>Google Tasks:</strong> Tasks with due dates sync to Google Tasks app and appear as reminders on Android</li>
             <li>• <strong>Apple Calendar & Reminders:</strong> Full bidirectional sync via CalDAV using your Apple ID and an app-specific password - events and reminders flow both ways automatically</li>
             <li>• <strong>Other Calendars:</strong> Outlook, and any app that supports calendar subscription links, can subscribe to a one-way feed of your Togethr events</li>
+            <li>• <strong>Import a Calendar File:</strong> Upload a .ics file (exported from Outlook, Android, iOS, or any calendar/task app) or paste a public calendar URL to bring its events and tasks into Togethr once</li>
             <li>• Auto-sync runs at your chosen frequency (1, 10, 30, or 60 minutes) while Togethr is open in a browser tab or installed app</li>
             <li>• Your calendar credentials are encrypted and stored securely</li>
           </ul>
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+// One-off import of a .ics file or a public calendar URL - the path that
+// actually covers "any standard calendar/task app" (Outlook, Android, iOS,
+// Google Takeout exports, etc.) rather than just the two providers Togethr
+// has a dedicated OAuth/CalDAV connector for. Unlike the Google/Apple cards
+// above, there's no ongoing connection here: each import is a single pull,
+// run again whenever the person wants to bring in a fresher export.
+function ImportIcsCard() {
+  const [file, setFile] = useState<File | null>(null)
+  const [feedUrl, setFeedUrl] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  const runImport = async (body: FormData | { url: string }) => {
+    setImporting(true)
+    setResult(null)
+    try {
+      const res = await authFetch('/api/calendar-sync/ical/import', {
+        method: 'POST',
+        ...(body instanceof FormData
+          ? { body }
+          : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setResult(data.message)
+        toast.success(data.message)
+        setFile(null)
+        setFeedUrl('')
+      } else {
+        toast.error(data.error || 'Import failed')
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleFileImport = () => {
+    if (!file) {
+      toast.error('Choose a .ics file first')
+      return
+    }
+    const formData = new FormData()
+    formData.append('file', file)
+    runImport(formData)
+  }
+
+  const handleUrlImport = () => {
+    if (!feedUrl.trim()) {
+      toast.error('Paste a calendar URL first')
+      return
+    }
+    runImport({ url: feedUrl.trim() })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <Upload className="w-8 h-8 text-muted-foreground" />
+          <div>
+            <CardTitle className="text-lg">Import a Calendar File</CardTitle>
+            <CardDescription>
+              Bring in events and tasks from Outlook, Android, iOS, or any app that can export a .ics file
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="space-y-2">
+          <p className="font-medium text-sm">Upload a .ics file</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input
+              type="file"
+              accept=".ics,text/calendar"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="flex-1"
+            />
+            <Button onClick={handleFileImport} disabled={importing || !file} className="shrink-0">
+              {importing ? <Spinner className="w-4 h-4 mr-2" /> : <Upload className="w-4 h-4 mr-2" />}
+              Import
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            In Outlook: File → Open &amp; Export → Import/Export → Export to a file (.ics). On Android or iOS, most
+            calendar apps have a similar &quot;Export calendar&quot; option.
+          </p>
+        </div>
+
+        <div className="border-t pt-4 space-y-2">
+          <p className="font-medium text-sm">Or paste a calendar link</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input
+              placeholder="https://... or webcal://..."
+              value={feedUrl}
+              onChange={(e) => setFeedUrl(e.target.value)}
+              className="flex-1"
+            />
+            <Button onClick={handleUrlImport} disabled={importing || !feedUrl.trim()} variant="outline" className="shrink-0">
+              {importing ? <Spinner className="w-4 h-4 mr-2" /> : <Link2 className="w-4 h-4 mr-2" />}
+              Import
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Works with a published Outlook/Google calendar link, or any public calendar subscription URL.
+          </p>
+        </div>
+
+        {result && (
+          <div className="p-3 rounded-lg bg-green-500/10 text-green-600 border border-green-500/20 text-sm">
+            {result}
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          This is a one-time pull, not an ongoing sync - run it again any time you have a fresher export.
+          Re-importing the same file won&apos;t create duplicates.
+        </p>
+      </CardContent>
+    </Card>
   )
 }
 

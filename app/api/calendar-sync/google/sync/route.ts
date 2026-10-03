@@ -182,6 +182,13 @@ export async function POST(request: NextRequest) {
             const isAllDay = !gEvent.start?.dateTime
 
             // Create event in our system
+            // BUG FIX: events.status is a Postgres enum whose only valid
+            // values are PENDING/APPROVED/REJECTED/CANCELLED/ARCHIVED -
+            // there is no SCHEDULED (same class of bug already found/fixed
+            // in the reminders cron). Every import insert here was throwing
+            // a NeonDbError on the enum constraint, so Google Calendar
+            // import has never actually worked - the sync call always
+            // 500'd before anything landed.
             const newEvent = await sql`
               INSERT INTO events (
                 calendar_id, title, description, location,
@@ -190,7 +197,7 @@ export async function POST(request: NextRequest) {
               ) VALUES (
                 ${calendarId}, ${gEvent.summary}, ${gEvent.description || null},
                 ${gEvent.location || null}, ${startTime}, ${endTime},
-                ${isAllDay}, 'SCHEDULED', 'FAMILY', ${user.id}
+                ${isAllDay}, 'APPROVED', 'FAMILY', ${user.id}
               )
               RETURNING id
             `

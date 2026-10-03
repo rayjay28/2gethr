@@ -93,6 +93,12 @@ export async function POST(request: NextRequest) {
         const startTime = parseIcsDate(dtStart)
         const endTime = dtEnd ? parseIcsDate(dtEnd) : startTime
 
+        // BUG FIX: events.status is a Postgres enum whose only valid values
+        // are PENDING/APPROVED/REJECTED/CANCELLED/ARCHIVED - there is no
+        // SCHEDULED (same class of bug already found/fixed in the reminders
+        // cron). Every import insert here was throwing a NeonDbError on the
+        // enum constraint, so Apple Calendar import has never actually
+        // worked - the sync call always 500'd before anything landed.
         const newEvent = await sql`
           INSERT INTO events (
             calendar_id, title, description, location,
@@ -100,7 +106,7 @@ export async function POST(request: NextRequest) {
             visibility, created_by_id
           ) VALUES (
             ${calendarId}, ${summary}, ${parseIcsField(item.raw, 'DESCRIPTION')}, ${parseIcsField(item.raw, 'LOCATION')},
-            ${startTime}, ${endTime}, ${isAllDay}, 'SCHEDULED', 'FAMILY', ${user.id}
+            ${startTime}, ${endTime}, ${isAllDay}, 'APPROVED', 'FAMILY', ${user.id}
           )
           RETURNING id
         `

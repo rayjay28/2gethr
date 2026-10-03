@@ -245,6 +245,33 @@ export function parseIcsField(ics: string, field: string): string | null {
   return match ? match[1].trim() : null
 }
 
+/**
+ * Split a whole .ics file's text into one raw string per VEVENT or VTODO
+ * block (each re-wrapped in its own BEGIN:VCALENDAR/END:VCALENDAR so
+ * parseIcsField's per-block field lookups keep working the same way they
+ * do on a single CalDAV REPORT item). Used by the generic file/URL import
+ * path, where there's no CalDAV server to ask for items individually - the
+ * whole exported calendar (Outlook, Android, iOS, Google Takeout, etc.)
+ * arrives as one multi-component .ics document.
+ */
+export function splitIcsComponents(icsText: string, component: 'VEVENT' | 'VTODO'): string[] {
+  const unfolded = icsText.replace(/\r?\n[ \t]/g, '')
+  const re = new RegExp(`BEGIN:${component}[\\s\\S]*?END:${component}`, 'gi')
+  const matches = unfolded.match(re) || []
+  return matches.map((block) => `BEGIN:VCALENDAR\r\n${block}\r\nEND:VCALENDAR`)
+}
+
+/** Parse an ICS DATE (YYYYMMDD) or DATE-TIME (YYYYMMDDTHHMMSSZ, or floating/local without Z) value into an ISO string. */
+export function parseIcsDateValue(value: string): string {
+  if (/^\d{8}$/.test(value)) {
+    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
+  }
+  const m = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$/)
+  if (!m) return new Date().toISOString()
+  const [, y, mo, d, h, mi, s] = m
+  return `${y}-${mo}-${d}T${h}:${mi}:${s}Z`
+}
+
 function icsEscape(text: string): string {
   return String(text).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')
 }
