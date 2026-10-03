@@ -260,8 +260,8 @@ function CalendarSyncContent() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Calendar Sync</h1>
-          <p className="text-sm text-muted-foreground">Connect external calendars for automatic sync</p>
+          <h1 className="text-xl sm:text-2xl font-bold">Calendar &amp; Task Sync</h1>
+          <p className="text-sm text-muted-foreground">Connect external calendars, or import events and tasks from any app</p>
         </div>
       </div>
 
@@ -517,7 +517,7 @@ function CalendarSyncContent() {
       {/* Info Card */}
       <Card className="bg-muted/30">
         <CardContent className="pt-6">
-          <h4 className="font-medium mb-2">About Calendar Sync</h4>
+          <h4 className="font-medium mb-2">About Calendar &amp; Task Sync</h4>
           <ul className="text-sm text-muted-foreground space-y-2">
             <li>• <strong>Google Calendar:</strong> Full bidirectional sync - events flow both ways automatically</li>
             <li>• <strong>Google Tasks:</strong> Tasks with due dates sync to Google Tasks app and appear as reminders on Android</li>

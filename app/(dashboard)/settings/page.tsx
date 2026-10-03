@@ -685,22 +685,24 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Calendar Sync */}
+        {/* Calendar & Task Sync - renamed from "Calendar Sync" since this
+            section also covers the one-off .ics file/URL import, not just
+            ongoing Google/Apple sync. */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <RefreshCw className="h-5 w-5" />
-              Calendar Sync
+              Calendar &amp; Task Sync
             </CardTitle>
             <CardDescription>
-              Connect Google Calendar for automatic sync
+              Connect Google or Apple Calendar, or import from any calendar app
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">
-                  Sync your events with external calendars
+                  Sync with external calendars, or import a .ics file from Outlook, Android, or iOS
                 </p>
               </div>
               <Button variant="outline" asChild>
