@@ -43,6 +43,7 @@ const navItems = [
   { href: '/dashboard', icon: Home, label: 'Overview' },
   { href: '/calendar', icon: Calendar, label: 'Calendar' },
   { href: '/tasks', icon: ListTodo, label: 'Tasks' },
+  { href: '/dashboard/reminders', icon: Bell, label: 'Reminders' },
   { href: '/family', icon: Users, label: 'Family' },
   { href: '/location', icon: Navigation, label: 'Location' },
   { href: '/places', icon: MapPin, label: 'Places' },

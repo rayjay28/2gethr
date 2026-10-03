@@ -50,6 +50,7 @@ export async function sendSmsNotification(
 }
 
 export type NotificationType =
+  | 'REMINDER'
   | 'EVENT_REMINDER'
   | 'EVENT_INVITATION'
   | 'EVENT_UPDATE'
