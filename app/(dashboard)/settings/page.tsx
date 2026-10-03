@@ -146,16 +146,12 @@ export default function SettingsPage() {
           toast.error('Push notifications are not supported in this browser')
           return
         }
-        // Read the error straight off this call's result rather than
-        // `pushNotifications.error` (see the comment on `subscribe` in
-        // use-push-notifications.ts for why that was always stale and
-        // showed the generic fallback message no matter what failed).
-        const result = await pushNotifications.subscribe()
-        if (!result.success) {
+        const ok = await pushNotifications.subscribe()
+        if (!ok) {
           toast.error(
-            result.error === 'Notification permission denied'
+            pushNotifications.error === 'Notification permission denied'
               ? 'Notification permission was denied. Enable notifications for this site in your browser settings, then try again.'
-              : result.error || 'Failed to enable push notifications'
+              : pushNotifications.error || 'Failed to enable push notifications'
           )
           return
         }
