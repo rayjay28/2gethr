@@ -21,7 +21,7 @@ import {
   DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Bell, Plus, Check, X, Trash2, Repeat, Clock, User as UserIcon } from 'lucide-react'
+import { Bell, Plus, Check, X, Trash2, Repeat, Clock, User as UserIcon, Smartphone, Mail, MessageSquare } from 'lucide-react'
 import { format, parseISO, isPast } from 'date-fns'
 import { authFetch, useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
@@ -39,7 +39,28 @@ interface Reminder {
   owner_id?: string
   owner_first_name?: string
   owner_last_name?: string
+  notify_channels?: NotifyChannel[] | null
 }
+
+// Mirrors NotificationChannel in lib/notifications.ts. The API (POST/PATCH
+// /api/reminders) already validates and stores this per-reminder, and the
+// per-minute delivery cron (app/api/cron/process-reminders) already reads
+// it and defaults to ['in_app', 'push', 'email'] when a reminder has none -
+// this page was the only piece that never let anyone choose.
+type NotifyChannel = 'in_app' | 'push' | 'email' | 'sms'
+
+const NOTIFY_CHANNEL_OPTIONS: { value: NotifyChannel; label: string; icon: typeof Bell }[] = [
+  { value: 'in_app', label: 'In-app', icon: Bell },
+  { value: 'push', label: 'Push', icon: Smartphone },
+  { value: 'email', label: 'Email', icon: Mail },
+  { value: 'sms', label: 'Text', icon: MessageSquare },
+]
+
+// Matches the cron's own fallback (reminder.notify_channels || ['in_app',
+// 'push', 'email']) so a reminder created here behaves the same as one with
+// no explicit channels - SMS stays opt-in since not everyone has it enabled
+// in their notification settings or a phone number on file.
+const DEFAULT_NOTIFY_CHANNELS: NotifyChannel[] = ['in_app', 'push', 'email']
 
 interface FamilyMember {
   userId: string
@@ -68,6 +89,13 @@ export default function RemindersPage() {
   const [remindAt, setRemindAt] = useState('')
   const [recurrence, setRecurrence] = useState('NONE')
   const [assigneeId, setAssigneeId] = useState('')
+  const [notifyChannels, setNotifyChannels] = useState<NotifyChannel[]>(DEFAULT_NOTIFY_CHANNELS)
+
+  const toggleNotifyChannel = (channel: NotifyChannel) => {
+    setNotifyChannels(prev =>
+      prev.includes(channel) ? prev.filter(c => c !== channel) : [...prev, channel]
+    )
+  }
 
   const fetchReminders = useCallback(async () => {
     setIsLoading(true)
@@ -116,6 +144,7 @@ export default function RemindersPage() {
     setRemindAt('')
     setRecurrence('NONE')
     setAssigneeId('')
+    setNotifyChannels(DEFAULT_NOTIFY_CHANNELS)
   }
 
   const handleCreate = async () => {
@@ -132,6 +161,7 @@ export default function RemindersPage() {
           isRecurring: recurrence !== 'NONE',
           recurrenceRule: recurrence !== 'NONE' ? recurrence : undefined,
           forUserId: assigneeId || undefined,
+          notifyChannels,
         }),
       })
       if (res.ok) {
@@ -273,6 +303,36 @@ export default function RemindersPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1.5">
+                <Label>Notify me via</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {NOTIFY_CHANNEL_OPTIONS.map(({ value, label, icon: Icon }) => {
+                    const selected = notifyChannels.includes(value)
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => toggleNotifyChannel(value)}
+                        aria-pressed={selected}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                          selected
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border text-muted-foreground hover:border-muted-foreground/40'
+                        )}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {notifyChannels.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Pick at least one way to hear about this, or it won&apos;t notify you at all.
+                  </p>
+                )}
+              </div>
               {familyMembers.length > 1 && (
                 <div className="space-y-1.5">
                   <Label htmlFor="reminder-assignee">Assign to</Label>
@@ -295,7 +355,7 @@ export default function RemindersPage() {
             <DialogFooter>
               <Button
                 onClick={handleCreate}
-                disabled={!title.trim() || !remindAt || isSaving}
+                disabled={!title.trim() || !remindAt || notifyChannels.length === 0 || isSaving}
                 className="w-full"
               >
                 {isSaving ? <Spinner className="w-4 h-4" /> : 'Create reminder'}
@@ -315,6 +375,9 @@ export default function RemindersPage() {
           {reminders.map((reminder) => {
             const due = parseISO(reminder.remind_at)
             const overdue = isPast(due) && reminder.status === 'PENDING'
+            const activeChannels = reminder.notify_channels && reminder.notify_channels.length > 0
+              ? reminder.notify_channels
+              : DEFAULT_NOTIFY_CHANNELS
             return (
               <div
                 key={reminder.id}
@@ -352,6 +415,11 @@ export default function RemindersPage() {
                         {`${reminder.owner_first_name || ''} ${reminder.owner_last_name || ''}`.trim()}
                       </span>
                     )}
+                    <span className="flex items-center gap-1 ml-1">
+                      {NOTIFY_CHANNEL_OPTIONS.filter(opt => activeChannels.includes(opt.value)).map(({ value, label, icon: Icon }) => (
+                        <Icon key={value} className="w-3 h-3" aria-label={label} />
+                      ))}
+                    </span>
                   </div>
                 </div>
 
