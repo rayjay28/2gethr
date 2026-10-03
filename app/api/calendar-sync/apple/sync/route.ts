@@ -33,6 +33,21 @@ export async function POST(request: NextRequest) {
     }
 
     const connection = connections[0]
+
+    // A connection row can exist with sync_enabled = true but no stored
+    // credentials/calendar URL - e.g. one left over from before the
+    // connect flow required both, or a row whose connect attempt didn't
+    // fully complete. decrypt() throws an opaque "Cannot read properties
+    // of null (reading 'split')" on a null access_token_encrypted, which
+    // told the user nothing useful. Fail clearly instead and point them
+    // at reconnecting.
+    if (!connection.access_token_encrypted || !connection.external_calendar_id) {
+      return NextResponse.json(
+        { success: false, error: 'Apple Calendar isn\'t fully connected. Reconnect it with your Apple ID and an app-specific password.' },
+        { status: 400 }
+      )
+    }
+
     const creds: CalDavCredentials = {
       username: connection.provider_account_email,
       password: decrypt(connection.access_token_encrypted),

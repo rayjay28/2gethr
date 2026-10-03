@@ -33,8 +33,10 @@ import {
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
-import { useState } from 'react'
-import { format, isToday, isTomorrow, parseISO } from 'date-fns'
+import { useState, useEffect, useCallback } from 'react'
+import { format, isToday, isTomorrow, parseISO, isPast } from 'date-fns'
+import { authFetch } from '@/hooks/use-auth'
+import { Bell } from 'lucide-react'
 
 export default function DashboardPage() {
   const { families, isLoading: familiesLoading } = useFamilies()
@@ -58,6 +60,35 @@ export default function DashboardPage() {
   const { access } = useSubscription(primaryFamily?.id || null)
   const { tasks, isLoading: tasksLoading, mutate: mutateTasks } = useTasks(primaryFamily?.id)
   const [processingTaskId, setProcessingTaskId] = useState<string | null>(null)
+
+  // Standalone reminders (not tied to a task or event) - shown as their own
+  // card below Upcoming Tasks, same "pending items at a glance" pattern.
+  interface ReminderSummary {
+    id: string
+    title: string
+    remind_at: string
+    is_recurring: boolean
+  }
+  const [reminders, setReminders] = useState<ReminderSummary[]>([])
+  const [remindersLoading, setRemindersLoading] = useState(true)
+
+  const fetchReminders = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/reminders?status=PENDING')
+      if (res.ok) {
+        const data = await res.json()
+        setReminders((data.data || []).slice(0, 5))
+      }
+    } catch (err) {
+      console.error('Failed to fetch reminders:', err)
+    } finally {
+      setRemindersLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchReminders()
+  }, [fetchReminders])
 
   // Helper to check if a task is past due
   const isPastDue = (t: { dueDate?: string; due_date?: string }) => {
@@ -643,6 +674,61 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Reminders Section */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-lg">Reminders</CardTitle>
+            <CardDescription>Quick reminders that aren&apos;t tied to a task or event</CardDescription>
+          </div>
+          <Button variant="ghost" size="sm" asChild className="gap-1">
+            <Link href="/dashboard/reminders">
+              View all
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {remindersLoading ? (
+            <div className="space-y-3">
+              {[1, 2].map(i => (
+                <Skeleton key={i} className="h-12" />
+              ))}
+            </div>
+          ) : reminders.length === 0 ? (
+            <div className="text-center py-6">
+              <Bell className="w-10 h-10 mx-auto text-muted-foreground/50 mb-2" />
+              <p className="text-sm text-muted-foreground">No reminders yet</p>
+              <Button variant="link" asChild className="mt-1">
+                <Link href="/dashboard/reminders">Create a reminder</Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {reminders.map((reminder) => {
+                const due = parseISO(reminder.remind_at)
+                const overdue = isPast(due)
+                return (
+                  <Link
+                    key={reminder.id}
+                    href="/dashboard/reminders"
+                    className="flex items-center gap-3 p-2.5 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                  >
+                    <Bell className={`w-4 h-4 shrink-0 ${overdue ? 'text-destructive' : 'text-muted-foreground'}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{reminder.title}</p>
+                      <p className={`text-xs ${overdue ? 'text-destructive' : 'text-muted-foreground'}`}>
+                        {format(due, 'MMM d, h:mm a')}
+                      </p>
+                    </div>
+                  </Link>
+                )
+              })}
             </div>
           )}
         </CardContent>

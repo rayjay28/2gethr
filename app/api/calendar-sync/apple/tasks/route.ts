@@ -47,6 +47,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Same guard as apple/sync: a connection row can exist without stored
+    // credentials (left over, or an incomplete connect), and decrypt(null)
+    // throws an opaque split-on-null error instead of a useful message.
+    if (!connection.access_token_encrypted) {
+      return NextResponse.json(
+        { success: false, error: 'Apple Calendar isn\'t fully connected. Reconnect it with your Apple ID and an app-specific password.' },
+        { status: 400 }
+      )
+    }
+
     const creds: CalDavCredentials = {
       username: connection.provider_account_email,
       password: decrypt(connection.access_token_encrypted),
