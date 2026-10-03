@@ -55,6 +55,7 @@ function CalendarSyncContent() {
 
   const {
     googleConnection,
+    appleConnection,
     isLoading,
     isSyncing,
     connectGoogle,
@@ -65,6 +66,70 @@ function CalendarSyncContent() {
 
   const [taskSyncEnabled, setTaskSyncEnabled] = useState(false)
   const [isTogglingTaskSync, setIsTogglingTaskSync] = useState(false)
+  const [isSyncingAll, setIsSyncingAll] = useState(false)
+
+  // Runs every enabled sync (Google events/tasks, Apple events/tasks) back
+  // to back, rather than making the person click "Sync Now" on each
+  // provider card separately. Each leg is independent - one provider
+  // failing (e.g. an Apple connection missing its password) doesn't stop
+  // the others from running, and the summary reports both successes and
+  // failures instead of masking a partial failure as a silent success.
+  const handleSyncAll = async () => {
+    const jobs: { label: string; run: () => Promise<unknown> }[] = []
+
+    if (googleConnection?.syncEnabled) {
+      jobs.push({ label: 'Google Calendar', run: () => syncNow('google') })
+    }
+    if (googleConnection?.syncTasks) {
+      jobs.push({
+        label: 'Google Tasks',
+        run: async () => {
+          const res = await authFetch('/api/calendar-sync/google/tasks', { method: 'POST' })
+          const data = await res.json()
+          if (!res.ok || !data.success) throw new Error(data.error || 'Sync failed')
+          return data
+        },
+      })
+    }
+    if (appleConnection?.syncEnabled) {
+      jobs.push({ label: 'Apple Calendar', run: () => syncNow('apple') })
+    }
+    if (appleConnection?.syncTasks) {
+      jobs.push({
+        label: 'Apple Reminders',
+        run: async () => {
+          const res = await authFetch('/api/calendar-sync/apple/tasks', { method: 'POST' })
+          const data = await res.json()
+          if (!res.ok || !data.success) throw new Error(data.error || 'Sync failed')
+          return data
+        },
+      })
+    }
+
+    if (jobs.length === 0) {
+      toast.error('No sync is enabled yet - connect or turn on a calendar below first')
+      return
+    }
+
+    setIsSyncingAll(true)
+    const failures: string[] = []
+    for (const job of jobs) {
+      try {
+        await job.run()
+      } catch (err) {
+        failures.push(`${job.label}: ${err instanceof Error ? err.message : 'Sync failed'}`)
+      }
+    }
+    setIsSyncingAll(false)
+
+    if (failures.length === 0) {
+      toast.success(`Synced ${jobs.length} source${jobs.length > 1 ? 's' : ''}`)
+    } else if (failures.length === jobs.length) {
+      toast.error(failures[0])
+    } else {
+      toast.error(`${jobs.length - failures.length}/${jobs.length} synced. ${failures[0]}`)
+    }
+  }
 
   // Subscription link for Apple Calendar, Outlook, and any other app that
   // can subscribe to a calendar via URL (rather than a Google-style OAuth
@@ -259,10 +324,19 @@ function CalendarSyncContent() {
             <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
           </Link>
         </Button>
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold">Calendar &amp; Task Sync</h1>
           <p className="text-sm text-muted-foreground">Connect external calendars, or import events and tasks from any app</p>
         </div>
+        <Button
+          onClick={handleSyncAll}
+          disabled={isSyncingAll || isSyncing}
+          size="sm"
+          className="gap-1.5 shrink-0"
+        >
+          <RefreshCw className={`h-4 w-4 ${isSyncingAll ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Sync All</span>
+        </Button>
       </div>
 
       {/* Status Message */}
