@@ -70,6 +70,23 @@ export async function POST(request: NextRequest) {
 
     let customerId: string | null = subscription[0].stripe_customer_id
 
+    // A stored customer ID can point at a Customer that doesn't exist under
+    // the currently configured Stripe account/mode (e.g. a row written
+    // before this account's live-mode keys were set up, or data carried
+    // over from a different Stripe account). Verify it actually resolves
+    // before reusing it, rather than letting checkout.sessions.create fail
+    // with "No such customer" further down.
+    if (customerId) {
+      try {
+        const existing = await stripe.customers.retrieve(customerId)
+        if (existing.deleted) {
+          customerId = null
+        }
+      } catch {
+        customerId = null
+      }
+    }
+
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email,
