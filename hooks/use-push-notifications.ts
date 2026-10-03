@@ -111,31 +111,24 @@ export function usePushNotifications() {
         await existingSubscription.unsubscribe()
       }
 
-      // REBUILD NOTE: this used to silently fall back to
-      // `pushManager.subscribe({ userVisibleOnly: true })` with no
-      // applicationServerKey when NEXT_PUBLIC_VAPID_PUBLIC_KEY wasn't
-      // present client-side (a leftover from when this app spoke to
-      // Firebase Cloud Messaging, which could mint a sender ID on its own).
-      // There is no Firebase here anymore and no `gcm_sender_id` in
-      // manifest.json, so that fallback has nothing to fall back to -
-      // modern Chrome requires an applicationServerKey for a first-time
-      // subscription and throws (commonly an AbortError or NotSupportedError
-      // whose message doesn't mention VAPID at all) if neither is present.
-      // That's a config problem (NEXT_PUBLIC_VAPID_PUBLIC_KEY missing from
-      // THIS build), not a per-device one, so fail with a message that says
-      // so instead of letting the browser's generic error reach the toast.
+      // Subscribe to push notifications
+      // Note: In production, you'd get this key from your server/Firebase
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-      if (!vapidPublicKey) {
-        const message = 'Push is not configured for this build (missing VAPID public key) - this is a server configuration issue, not something fixable on this device.'
-        setState(prev => ({ ...prev, isLoading: false, error: message }))
-        return { success: false, error: message }
-      }
 
-      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey)
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey
-      })
+      let subscription: PushSubscription
+
+      if (vapidPublicKey) {
+        const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey)
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey
+        })
+      } else {
+        // Fallback for FCM - use Firebase messaging
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true
+        })
+      }
 
       // Send subscription to server
       const response = await authFetch('/api/notifications/push-token', {
