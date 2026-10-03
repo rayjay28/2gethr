@@ -21,9 +21,9 @@ import {
   DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Bell, Plus, Check, X, Trash2, Repeat, Clock } from 'lucide-react'
+import { Bell, Plus, Check, X, Trash2, Repeat, Clock, User as UserIcon } from 'lucide-react'
 import { format, parseISO, isPast } from 'date-fns'
-import { authFetch } from '@/hooks/use-auth'
+import { authFetch, useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 
 interface Reminder {
@@ -35,6 +35,15 @@ interface Reminder {
   is_recurring: boolean
   recurrence_rule: string | null
   sent_at: string | null
+  user_id: string
+  owner_id?: string
+  owner_first_name?: string
+  owner_last_name?: string
+}
+
+interface FamilyMember {
+  userId: string
+  displayName: string
 }
 
 const RECURRENCE_OPTIONS = [
@@ -46,7 +55,9 @@ const RECURRENCE_OPTIONS = [
 ]
 
 export default function RemindersPage() {
+  const { user } = useAuth()
   const [reminders, setReminders] = useState<Reminder[]>([])
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -56,6 +67,7 @@ export default function RemindersPage() {
   const [description, setDescription] = useState('')
   const [remindAt, setRemindAt] = useState('')
   const [recurrence, setRecurrence] = useState('NONE')
+  const [assigneeId, setAssigneeId] = useState('')
 
   const fetchReminders = useCallback(async () => {
     setIsLoading(true)
@@ -76,11 +88,34 @@ export default function RemindersPage() {
     fetchReminders()
   }, [fetchReminders])
 
+  // Load the active family's adult members so a reminder can be assigned to
+  // someone else (e.g. a spouse) - not just the signed-in user. Reminders
+  // only deliver to real user accounts, so children (who have no login or
+  // contact info) aren't offered here.
+  useEffect(() => {
+    if (!user?.primaryFamily?.id) return
+    authFetch('/api/families')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        const family = data?.families?.find((f: { id: string }) => f.id === user.primaryFamily?.id)
+        if (family?.members) {
+          setFamilyMembers(
+            family.members.map((m: { userId: string; displayName: string }) => ({
+              userId: m.userId,
+              displayName: m.displayName,
+            }))
+          )
+        }
+      })
+      .catch((error) => console.error('Failed to fetch family members:', error))
+  }, [user?.primaryFamily?.id])
+
   const resetForm = () => {
     setTitle('')
     setDescription('')
     setRemindAt('')
     setRecurrence('NONE')
+    setAssigneeId('')
   }
 
   const handleCreate = async () => {
@@ -96,6 +131,7 @@ export default function RemindersPage() {
           remindAt: new Date(remindAt).toISOString(),
           isRecurring: recurrence !== 'NONE',
           recurrenceRule: recurrence !== 'NONE' ? recurrence : undefined,
+          forUserId: assigneeId || undefined,
         }),
       })
       if (res.ok) {
@@ -237,6 +273,24 @@ export default function RemindersPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {familyMembers.length > 1 && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="reminder-assignee">Assign to</Label>
+                  <Select value={assigneeId || 'me'} onValueChange={(v) => setAssigneeId(v === 'me' ? '' : v)}>
+                    <SelectTrigger id="reminder-assignee">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="me">Myself</SelectItem>
+                      {familyMembers
+                        .filter(m => m.userId !== user?.id)
+                        .map(m => (
+                          <SelectItem key={m.userId} value={m.userId}>{m.displayName}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button
@@ -290,6 +344,12 @@ export default function RemindersPage() {
                       <span className="flex items-center gap-1 ml-1">
                         <Repeat className="w-3 h-3" />
                         {reminder.recurrence_rule?.toLowerCase()}
+                      </span>
+                    )}
+                    {reminder.user_id !== user?.id && (reminder.owner_first_name || reminder.owner_last_name) && (
+                      <span className="flex items-center gap-1 ml-1">
+                        <UserIcon className="w-3 h-3" />
+                        {`${reminder.owner_first_name || ''} ${reminder.owner_last_name || ''}`.trim()}
                       </span>
                     )}
                   </div>

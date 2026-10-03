@@ -7,11 +7,10 @@ const VALID_NOTIFY_CHANNELS: NotificationChannel[] = ['in_app', 'push', 'email',
 
 // GET - List the current user's standalone reminders.
 // These are personal reminders ("pick up dry cleaning", "take medication") -
-// not tied to a task or calendar event - so by default this returns
-// reminders the signed-in user owns (user_id), not every reminder in their
-// family. A family member can still see reminders someone set for them by
-// filtering with assignedToMe, since forUserId lets a parent create a
-// reminder on a child/spouse's behalf.
+// not tied to a task or calendar event. Returns reminders the signed-in
+// user owns (user_id) AND reminders they created for someone else
+// (created_by_id) - so a reminder assigned to a family member stays
+// visible/editable by whoever set it, not just its owner.
 export async function GET(request: NextRequest) {
   try {
     const { user } = await getUserFromRequest(request)
@@ -40,11 +39,14 @@ export async function GET(request: NextRequest) {
     const reminders = await sql`
       SELECT r.*,
              u_creator.first_name as creator_first_name, u_creator.last_name as creator_last_name,
+             u_owner.first_name as owner_first_name, u_owner.last_name as owner_last_name,
+             u_owner.id as owner_id,
              f.name as family_name
       FROM reminders r
       LEFT JOIN users u_creator ON r.created_by_id = u_creator.id
+      LEFT JOIN users u_owner ON r.user_id = u_owner.id
       LEFT JOIN families f ON r.family_id = f.id
-      WHERE r.user_id = ${user.id}
+      WHERE (r.user_id = ${user.id} OR r.created_by_id = ${user.id})
         AND r.status != 'ARCHIVED'
         ${familyId ? sql`AND r.family_id = ${familyId}` : sql``}
         ${normalizedStatus ? sql`AND r.status = ${normalizedStatus}` : sql``}
