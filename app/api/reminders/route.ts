@@ -36,6 +36,20 @@ export async function GET(request: NextRequest) {
 
     const normalizedStatus = status && status !== 'ALL' ? status : null
 
+    // Previously this built the two optional filters as nested sql``
+    // fragments (`${familyId ? sql\`AND ...\` : sql\`\`}`), which the Neon
+    // serverless driver's tagged-template composition mishandles once more
+    // than one fragment in the same query can be genuinely empty - it
+    // doesn't throw where the bug is introduced, just emits a query with a
+    // stray "$3" placeholder, so every call died later with an opaque
+    // "NeonDbError: syntax error at or near "$3"" (visible in Vercel logs
+    // for basically every GET to this route, with or without ?status=).
+    // That's the actual reason a newly created reminder never reappeared -
+    // the list view's fetch silently 500'd and was swallowed by the
+    // catch block below, leaving whatever was already in client state.
+    // The standard "$param IS NULL OR column = $param" form below always
+    // binds a real parameter instead of conditionally splicing in SQL text,
+    // so there's no empty-fragment composition for the driver to get wrong.
     const reminders = await sql`
       SELECT r.*,
              u_creator.first_name as creator_first_name, u_creator.last_name as creator_last_name,
@@ -48,8 +62,8 @@ export async function GET(request: NextRequest) {
       LEFT JOIN families f ON r.family_id = f.id
       WHERE (r.user_id = ${user.id} OR r.created_by_id = ${user.id})
         AND r.status != 'ARCHIVED'
-        ${familyId ? sql`AND r.family_id = ${familyId}` : sql``}
-        ${normalizedStatus ? sql`AND r.status = ${normalizedStatus}` : sql``}
+        AND (${familyId || null}::text IS NULL OR r.family_id = ${familyId || null})
+        AND (${normalizedStatus || null}::text IS NULL OR r.status = ${normalizedStatus || null})
       ORDER BY r.remind_at ASC
     `
 
