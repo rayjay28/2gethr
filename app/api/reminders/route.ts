@@ -36,6 +36,27 @@ export async function GET(request: NextRequest) {
 
     const normalizedStatus = status && status !== 'ALL' ? status : null
 
+    // What counts as "the archive" for a reminder: unlike tasks (which stay
+    // visible with a COMPLETED/CANCELLED status until a separate bulk
+    // "archive" step runs) a reminder has no such second step in the UI -
+    // completing or dismissing one from the reminders page IS the end of
+    // its active life. So ?status=ARCHIVED here means "everything no
+    // longer active" (COMPLETED, DISMISSED, or the literal ARCHIVED
+    // status, which PATCH .../reminders/[id] can still also set directly),
+    // matching what the Archive page's Tasks/Events sections mean by
+    // "archived" - history, not clutter in the main list. No status at all
+    // (the reminders page's own fetch) means just PENDING, which is also
+    // what fixes a real bug: previously this route's default excluded only
+    // ARCHIVED, so a reminder a user had just completed or dismissed -
+    // removed from the list purely client-side - silently reappeared on
+    // the next page load because the server still considered it current.
+    const statusFilter =
+      normalizedStatus === 'ARCHIVED'
+        ? ['COMPLETED', 'DISMISSED', 'ARCHIVED']
+        : normalizedStatus
+          ? [normalizedStatus]
+          : ['PENDING']
+
     // Previously this built the two optional filters as nested sql``
     // fragments (`${familyId ? sql\`AND ...\` : sql\`\`}`), which the Neon
     // serverless driver's tagged-template composition mishandles once more
@@ -50,6 +71,9 @@ export async function GET(request: NextRequest) {
     // The standard "$param IS NULL OR column = $param" form below always
     // binds a real parameter instead of conditionally splicing in SQL text,
     // so there's no empty-fragment composition for the driver to get wrong.
+    // statusFilter is computed above in JS (never conditionally spliced
+    // SQL), and r.status = ANY(...) against it needs no "IS NULL OR" at
+    // all, so the same bug class doesn't apply there either.
     const reminders = await sql`
       SELECT r.*,
              u_creator.first_name as creator_first_name, u_creator.last_name as creator_last_name,
@@ -61,9 +85,8 @@ export async function GET(request: NextRequest) {
       LEFT JOIN users u_owner ON r.user_id = u_owner.id
       LEFT JOIN families f ON r.family_id = f.id
       WHERE (r.user_id = ${user.id} OR r.created_by_id = ${user.id})
-        AND r.status != 'ARCHIVED'
+        AND r.status = ANY(${statusFilter})
         AND (${familyId || null}::text IS NULL OR r.family_id = ${familyId || null})
-        AND (${normalizedStatus || null}::text IS NULL OR r.status = ${normalizedStatus || null})
       ORDER BY r.remind_at ASC
     `
 
