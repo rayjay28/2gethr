@@ -39,6 +39,18 @@ import {
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
+// '/dashboard' is both the Home route AND the prefix every other dashboard
+// route is nested under (/dashboard/reminders, /dashboard/archive, ...), so
+// the old `pathname === href || pathname.startsWith(href + '/')` check
+// matched Home for every one of those too - Home and whichever sub-page
+// you were on both lit up at once. Home only ever matches its own exact
+// path; every other item keeps the prefix match so a deeper route (e.g. a
+// future /tasks/[id]) still highlights its parent tab.
+function isNavItemActive(pathname: string, href: string): boolean {
+  if (href === '/dashboard') return pathname === '/dashboard'
+  return pathname === href || pathname.startsWith(href + '/')
+}
+
 const navItems = [
   { href: '/dashboard', icon: Home, label: 'Home' },
   { href: '/calendar', icon: Calendar, label: 'Calendar' },
@@ -101,7 +113,7 @@ export default function DashboardLayout({
           {/* Navigation */}
           <nav className="flex-1 space-y-1 p-4">
             {navItems.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+              const isActive = isNavItemActive(pathname, item.href)
               return (
                 <Link
                   key={item.href}
@@ -217,7 +229,7 @@ export default function DashboardLayout({
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
           <nav className="absolute left-0 top-16 bottom-0 w-64 bg-background border-r border-border p-4 space-y-1">
             {navItems.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+              const isActive = isNavItemActive(pathname, item.href)
               return (
                 <Link
                   key={item.href}
@@ -276,7 +288,7 @@ export default function DashboardLayout({
             { href: '/family', icon: Users, label: 'Family' },
             { href: '/location', icon: Navigation, label: 'Location' },
           ].map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+            const isActive = isNavItemActive(pathname, item.href)
             return (
               <Link
                 key={item.href}
