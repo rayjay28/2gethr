@@ -40,7 +40,7 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { href: '/dashboard', icon: Home, label: 'Overview' },
+  { href: '/dashboard', icon: Home, label: 'Home' },
   { href: '/calendar', icon: Calendar, label: 'Calendar' },
   { href: '/tasks', icon: ListTodo, label: 'Tasks' },
   { href: '/dashboard/reminders', icon: Bell, label: 'Reminders' },

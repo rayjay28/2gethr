@@ -271,7 +271,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Overview</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Home</h1>
           <p className="text-sm text-muted-foreground">{primaryFamily.name}</p>
         </div>
         <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 py-1">
