@@ -80,16 +80,30 @@ export async function PATCH(
       // marker so the delivery cron will consider it due again.
     }
 
+    // Every column below used to fall back to "keep the current value" via
+    // a nested sql`columnName` fragment (e.g.
+    // `description = ${description !== undefined ? description : sql\`description\`}`).
+    // That's not a whole-clause fragment (the one pattern the Neon
+    // serverless driver's docs actually demonstrate, like a full
+    // `WHERE ...` or `AND ...` clause) - it's a bare identifier dropped into
+    // a single value slot, and the driver doesn't recognize it as SQL
+    // there. It gets coerced to its JS object representation instead, so
+    // every PATCH (checking a reminder off, dismissing it, editing it)
+    // failed with "NeonDbError: invalid input syntax for type timestamp
+    // with time zone: "{ parameterizedQuery: {...} }"" - the "keep remind_at
+    // as-is" fragment landing in a timestamp column, verbatim. `reminder`
+    // (loaded above) already has the current row, so compute the fallback
+    // in JS and bind it as a plain value - no nested sql`` involved.
     const updated = await sql`
       UPDATE reminders SET
-        title = COALESCE(${title ?? null}, title),
-        description = ${description !== undefined ? description : sql`description`},
-        remind_at = ${remindAtIso ?? sql`remind_at`},
-        sent_at = ${remindAtIso !== undefined ? null : sql`sent_at`},
-        is_recurring = ${isRecurring !== undefined ? isRecurring : sql`is_recurring`},
-        recurrence_rule = ${recurrenceRule !== undefined ? recurrenceRule : sql`recurrence_rule`},
-        notify_channels = ${normalizedNotifyChannels !== undefined ? normalizedNotifyChannels : sql`notify_channels`},
-        status = ${nextStatus ?? sql`status`},
+        title = ${title ?? reminder.title},
+        description = ${description !== undefined ? description : reminder.description},
+        remind_at = ${remindAtIso ?? reminder.remind_at},
+        sent_at = ${remindAtIso !== undefined ? null : reminder.sent_at},
+        is_recurring = ${isRecurring !== undefined ? isRecurring : reminder.is_recurring},
+        recurrence_rule = ${recurrenceRule !== undefined ? recurrenceRule : reminder.recurrence_rule},
+        notify_channels = ${normalizedNotifyChannels !== undefined ? normalizedNotifyChannels : reminder.notify_channels},
+        status = ${nextStatus ?? reminder.status},
         updated_at = NOW()
       WHERE id = ${reminderId}
       RETURNING *

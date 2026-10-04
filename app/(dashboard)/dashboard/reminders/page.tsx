@@ -104,6 +104,10 @@ function RemindersPageContent() {
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  // Set while the dialog is editing an existing reminder (opened by
+  // clicking its title) rather than creating a new one - same dialog,
+  // branches to PATCH instead of POST on save.
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -172,6 +176,7 @@ function RemindersPageContent() {
   }, [user?.primaryFamily?.id])
 
   const resetForm = () => {
+    setEditingId(null)
     setTitle('')
     setDescription('')
     setRemindAt('')
@@ -180,31 +185,74 @@ function RemindersPageContent() {
     setNotifyChannels(DEFAULT_NOTIFY_CHANNELS)
   }
 
-  const handleCreate = async () => {
+  // Converts a stored UTC ISO timestamp to the local "YYYY-MM-DDTHH:mm"
+  // value a <input type="datetime-local"> needs - the inverse of
+  // `new Date(remindAt).toISOString()` below. Using the ISO string's own
+  // UTC fields (as toISOString().slice(0, 16) would) would show the wrong
+  // clock time in any timezone other than UTC, so this goes through the
+  // Date object's local getters instead.
+  const toDatetimeLocalValue = (iso: string) => {
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
+  // Clicking a reminder's title opens the same dialog pre-filled with its
+  // current values, mirroring how a task or event's title opens its
+  // details - reminders don't have a separate detail page, so this reuses
+  // the create form in an editing mode instead of building a second view.
+  const openEditDialog = (reminder: Reminder) => {
+    setEditingId(reminder.id)
+    setTitle(reminder.title)
+    setDescription(reminder.description || '')
+    setRemindAt(toDatetimeLocalValue(reminder.remind_at))
+    setRecurrence(reminder.is_recurring && reminder.recurrence_rule ? reminder.recurrence_rule : 'NONE')
+    setAssigneeId(reminder.user_id !== user?.id ? reminder.user_id : '')
+    setNotifyChannels(
+      reminder.notify_channels && reminder.notify_channels.length > 0
+        ? reminder.notify_channels
+        : DEFAULT_NOTIFY_CHANNELS
+    )
+    setDialogOpen(true)
+  }
+
+  const handleSave = async () => {
     if (!title.trim() || !remindAt) return
     setIsSaving(true)
     try {
-      const res = await authFetch('/api/reminders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim() || undefined,
-          remindAt: new Date(remindAt).toISOString(),
-          isRecurring: recurrence !== 'NONE',
-          recurrenceRule: recurrence !== 'NONE' ? recurrence : undefined,
-          forUserId: assigneeId || undefined,
-          notifyChannels,
-        }),
-      })
+      const res = await authFetch(
+        editingId ? `/api/reminders/${editingId}` : '/api/reminders',
+        {
+          method: editingId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: title.trim(),
+            description: description.trim() || undefined,
+            remindAt: new Date(remindAt).toISOString(),
+            isRecurring: recurrence !== 'NONE',
+            // Explicit null (not undefined) so editing a recurring reminder
+            // back to "Doesn't repeat" actually clears recurrence_rule in
+            // the PATCH route - that route treats an undefined field as
+            // "leave the existing value alone", which would otherwise leave
+            // a stale rule behind (harmless since isRecurring=false makes it
+            // unused, but confusing if ever inspected or re-enabled).
+            recurrenceRule: recurrence !== 'NONE' ? recurrence : null,
+            forUserId: !editingId ? (assigneeId || undefined) : undefined,
+            notifyChannels,
+          }),
+        }
+      )
       if (res.ok) {
         const data = await res.json()
-        setReminders(prev => [...prev, data.data].sort((a, b) => a.remind_at.localeCompare(b.remind_at)))
+        setReminders(prev => {
+          const withoutThis = prev.filter(r => r.id !== data.data.id)
+          return [...withoutThis, data.data].sort((a, b) => a.remind_at.localeCompare(b.remind_at))
+        })
         resetForm()
         setDialogOpen(false)
       }
     } catch (error) {
-      console.error('Failed to create reminder:', error)
+      console.error(editingId ? 'Failed to update reminder:' : 'Failed to create reminder:', error)
     } finally {
       setIsSaving(false)
     }
@@ -293,7 +341,7 @@ function RemindersPageContent() {
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>New reminder</DialogTitle>
+              <DialogTitle>{editingId ? 'Edit reminder' : 'New reminder'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
@@ -366,7 +414,7 @@ function RemindersPageContent() {
                   </p>
                 )}
               </div>
-              {familyMembers.length > 1 && (
+              {!editingId && familyMembers.length > 1 && (
                 <div className="space-y-1.5">
                   <Label htmlFor="reminder-assignee">Assign to</Label>
                   <Select value={assigneeId || 'me'} onValueChange={(v) => setAssigneeId(v === 'me' ? '' : v)}>
@@ -387,11 +435,11 @@ function RemindersPageContent() {
             </div>
             <DialogFooter>
               <Button
-                onClick={handleCreate}
+                onClick={handleSave}
                 disabled={!title.trim() || !remindAt || notifyChannels.length === 0 || isSaving}
                 className="w-full"
               >
-                {isSaving ? <Spinner className="w-4 h-4" /> : 'Create reminder'}
+                {isSaving ? <Spinner className="w-4 h-4" /> : editingId ? 'Save changes' : 'Create reminder'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -420,13 +468,18 @@ function RemindersPageContent() {
                   onClick={() => handleComplete(reminder.id)}
                   disabled={processingId === reminder.id}
                   aria-label="Mark complete"
-                  className="mt-0.5 w-5 h-5 rounded-full border-2 border-muted-foreground/40 hover:border-primary flex-shrink-0 flex items-center justify-center transition-colors"
+                  className="group mt-0.5 w-5 h-5 rounded-full border-2 border-muted-foreground/40 hover:border-primary flex-shrink-0 flex items-center justify-center transition-colors"
                 >
-                  <Check className="w-3 h-3 opacity-0 hover:opacity-100" />
+                  <Check className="w-3 h-3 opacity-0 group-hover:opacity-100" />
                 </button>
 
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{reminder.title}</p>
+                  <button
+                    onClick={() => openEditDialog(reminder)}
+                    className="font-medium truncate text-left hover:underline block w-full"
+                  >
+                    {reminder.title}
+                  </button>
                   {reminder.description && (
                     <p className="text-sm text-muted-foreground mt-0.5">{reminder.description}</p>
                   )}
