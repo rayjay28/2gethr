@@ -4,6 +4,7 @@ import { getUserFromRequest, checkFamilySubscription, logAuditEvent } from "@/li
 import { z } from "zod"
 import { sendSMS, SMS_TEMPLATES, isTwilioConfigured } from "@/lib/services/sms"
 import { sendEmail, EMAIL_TEMPLATES, isResendConfigured } from "@/lib/services/email"
+import { sendPushToUser, isFirebaseConfigured } from "@/lib/services/push"
 
 const locationPingSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -253,7 +254,7 @@ async function checkGeofences(
 ) {
   // Get all geofence-enabled places for this family
   const places = await sql`
-    SELECT id, name, latitude, longitude, radius, alert_on_arrival, alert_on_departure
+    SELECT id, name, latitude, longitude, radius, alert_on_arrival, alert_on_departure, notify_channels
     FROM saved_places
     WHERE family_id = ${familyId} AND geofence_enabled = true
   `
@@ -297,10 +298,10 @@ async function checkGeofences(
     // Detect arrival or departure
     if (isInside && !wasInside && place.alert_on_arrival) {
       await recordGeofenceEvent(userId, place.id, "ARRIVAL", latitude, longitude)
-      await createGeofenceNotification(userId, familyId, place.name, "ARRIVAL")
+      await createGeofenceNotification(userId, familyId, place.name, "ARRIVAL", place.notify_channels)
     } else if (!isInside && wasInside && place.alert_on_departure) {
       await recordGeofenceEvent(userId, place.id, "DEPARTURE", latitude, longitude)
-      await createGeofenceNotification(userId, familyId, place.name, "DEPARTURE")
+      await createGeofenceNotification(userId, familyId, place.name, "DEPARTURE", place.notify_channels)
     }
   }
 }
@@ -323,11 +324,24 @@ async function createGeofenceNotification(
   userId: string,
   familyId: string,
   placeName: string,
-  eventType: "ARRIVAL" | "DEPARTURE"
+  eventType: "ARRIVAL" | "DEPARTURE",
+  notifyChannels: string[] | null
 ) {
   // Get user's name
   const users = await sql`SELECT first_name FROM users WHERE id = ${userId}`
   const userName = users[0]?.first_name || "Family member"
+
+  // The place's own notify_channels (set via the "Notify me via" picker on
+  // the Places page) decides which channels are even eligible for this
+  // alert, mirroring the notify_channels picker already on
+  // tasks/events/reminders. Null/empty (a place created before this column
+  // existed, or with no explicit choice) means every channel is eligible -
+  // each one is then still individually gated by the recipient's own
+  // notification settings below, exactly as it always was.
+  const wantsInApp = !notifyChannels || notifyChannels.length === 0 || notifyChannels.includes('in_app')
+  const wantsPush = !notifyChannels || notifyChannels.length === 0 || notifyChannels.includes('push')
+  const wantsSms = !notifyChannels || notifyChannels.length === 0 || notifyChannels.includes('sms')
+  const wantsEmail = !notifyChannels || notifyChannels.length === 0 || notifyChannels.includes('email')
 
   // Get parents/guardians to notify (not just PARENT — a GUARDIAN can already
   // view this child's location and settings, so they should get the same
@@ -343,7 +357,7 @@ async function createGeofenceNotification(
   // single arrival/departure — silently killing all geofence notifications
   // (in-app included) since the throw happened before any INSERT ran.
   const recipients = await sql`
-    SELECT fm.user_id, u.email, u.phone, rs.email_enabled, rs.sms_enabled
+    SELECT fm.user_id, u.email, u.phone, rs.email_enabled, rs.sms_enabled, rs.push_enabled
     FROM family_members fm
     JOIN users u ON u.id = fm.user_id
     LEFT JOIN reminder_settings rs ON rs.user_id = fm.user_id
@@ -362,26 +376,50 @@ async function createGeofenceNotification(
   const timeStr = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
 
   for (const recipient of recipients) {
-    const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
-    await sql`
-      INSERT INTO notifications (id, user_id, type, title, body, data, created_at)
-      VALUES (
-        ${notifId},
-        ${recipient.user_id},
-        'LOCATION_ALERT',
-        ${title},
-        ${body},
-        ${JSON.stringify({ userId, placeName, eventType })}::jsonb,
-        NOW()
-      )
-    `
+    if (wantsInApp) {
+      const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+      await sql`
+        INSERT INTO notifications (id, user_id, type, title, body, data, created_at)
+        VALUES (
+          ${notifId},
+          ${recipient.user_id},
+          'LOCATION_ALERT',
+          ${title},
+          ${body},
+          ${JSON.stringify({ userId, placeName, eventType })}::jsonb,
+          NOW()
+        )
+      `
+    }
+
+    // Push — geofence alerts never sent a real push before this; every
+    // other notification type (tasks, events, reminders) already does via
+    // this same sendPushToUser/isFirebaseConfigured pair in
+    // lib/notifications.ts. Best-effort: a user with no active push
+    // subscription just gets sent:0, and any failure is logged, not
+    // thrown, so it can never take down the location ping that triggered
+    // it. Gated on reminder_settings.push_enabled, the same column the
+    // Settings page toggle writes to.
+    const pushEnabled = recipient.push_enabled ?? true
+    if (wantsPush && pushEnabled && isFirebaseConfigured()) {
+      try {
+        await sendPushToUser(recipient.user_id, {
+          title,
+          body,
+          data: { type: "LOCATION_ALERT", placeName, eventType },
+          clickAction: "/places",
+        })
+      } catch (err) {
+        console.error("Geofence push threw:", err)
+      }
+    }
 
     // Email — same default as the Settings page (on unless the recipient
     // has explicitly turned it off there). A failure here must never take
     // down the location ping that triggered it, so it's caught and logged,
     // not thrown.
     const emailEnabled = recipient.email_enabled ?? true
-    if (emailEnabled && recipient.email && isResendConfigured()) {
+    if (wantsEmail && emailEnabled && recipient.email && isResendConfigured()) {
       try {
         const content = EMAIL_TEMPLATES.GEOFENCE_ALERT(userName, actionVerb, placeName, timeStr)
         const result = await sendEmail({ to: recipient.email, ...content })
@@ -396,7 +434,7 @@ async function createGeofenceNotification(
     // SMS — same default as the Settings page (off until the recipient sets
     // a phone number and flips "SMS Notifications" on there).
     const smsEnabled = recipient.sms_enabled === true
-    if (smsEnabled && recipient.phone && isTwilioConfigured()) {
+    if (wantsSms && smsEnabled && recipient.phone && isTwilioConfigured()) {
       try {
         const smsBody =
           eventType === "ARRIVAL"

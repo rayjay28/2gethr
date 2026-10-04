@@ -39,11 +39,15 @@ import {
   Star,
   Locate,
   Search,
-  CheckCircle2
+  CheckCircle2,
+  Smartphone,
+  Mail,
+  MessageSquare,
 } from 'lucide-react'
 import { useFavorites } from '@/components/favorites-dropdown'
 import useSWR from 'swr'
 import Link from 'next/link'
+import { cn } from '@/lib/utils'
 
 interface SavedPlace {
   id: string
@@ -58,8 +62,26 @@ interface SavedPlace {
   alertOnDeparture: boolean
   icon: string | null
   color: string
+  notifyChannels: NotifyChannel[] | null
   createdAt: string
 }
+
+// Mirrors NotificationChannel in lib/notifications.ts and the same picker
+// already on reminders (app/(dashboard)/dashboard/reminders/page.tsx), tasks
+// and events - which channel fires a geofence arrival/departure alert for
+// this place. Null/unset (the default) falls back to "use the recipient's
+// own notification settings", matching how a place created before this
+// column existed behaves.
+type NotifyChannel = 'in_app' | 'push' | 'email' | 'sms'
+
+const NOTIFY_CHANNEL_OPTIONS: { value: NotifyChannel; label: string; icon: typeof Bell }[] = [
+  { value: 'in_app', label: 'In-app', icon: Bell },
+  { value: 'push', label: 'Push', icon: Smartphone },
+  { value: 'email', label: 'Email', icon: Mail },
+  { value: 'sms', label: 'Text', icon: MessageSquare },
+]
+
+const DEFAULT_NOTIFY_CHANNELS: NotifyChannel[] = ['in_app', 'push', 'email']
 
 const placeIcons: { [key: string]: typeof MapPin } = {
   home: Home,
@@ -115,6 +137,7 @@ export default function PlacesPage() {
     alertOnDeparture: true,
     icon: 'default',
     color: '#3B82F6',
+    notifyChannels: DEFAULT_NOTIFY_CHANNELS as NotifyChannel[],
   })
   const [editPlace, setEditPlace] = useState({
     name: '',
@@ -128,7 +151,15 @@ export default function PlacesPage() {
     alertOnDeparture: true,
     icon: 'default',
     color: '#3B82F6',
+    notifyChannels: DEFAULT_NOTIFY_CHANNELS as NotifyChannel[],
   })
+
+  const toggleNotifyChannel = (channel: NotifyChannel, target: 'new' | 'edit') => {
+    const update = (channels: NotifyChannel[]) =>
+      channels.includes(channel) ? channels.filter((c) => c !== channel) : [...channels, channel]
+    if (target === 'new') setNewPlace((p) => ({ ...p, notifyChannels: update(p.notifyChannels) }))
+    else setEditPlace((p) => ({ ...p, notifyChannels: update(p.notifyChannels) }))
+  }
 
   const geocodeAddress = async (address: string, target: 'new' | 'edit') => {
     if (!address.trim()) {
@@ -219,6 +250,7 @@ export default function PlacesPage() {
           alertOnDeparture: newPlace.alertOnDeparture,
           icon: newPlace.icon,
           color: newPlace.color,
+          notifyChannels: newPlace.notifyChannels,
         }),
       })
 
@@ -239,6 +271,7 @@ export default function PlacesPage() {
           alertOnDeparture: true,
           icon: 'default',
           color: '#3B82F6',
+          notifyChannels: DEFAULT_NOTIFY_CHANNELS,
         })
         mutate()
       } else {
@@ -264,6 +297,10 @@ export default function PlacesPage() {
       alertOnDeparture: place.alertOnDeparture,
       icon: place.icon || 'default',
       color: place.color,
+      notifyChannels:
+        place.notifyChannels && place.notifyChannels.length > 0
+          ? place.notifyChannels
+          : DEFAULT_NOTIFY_CHANNELS,
     })
     setEditPlaceOpen(true)
   }
@@ -291,6 +328,7 @@ export default function PlacesPage() {
           alertOnDeparture: editPlace.alertOnDeparture,
           icon: editPlace.icon,
           color: editPlace.color,
+          notifyChannels: editPlace.notifyChannels,
         }),
       })
 
@@ -530,6 +568,36 @@ export default function PlacesPage() {
                           className="w-full"
                         />
                       </div>
+                      <div className="space-y-1.5">
+                        <Label>Notify me via</Label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {NOTIFY_CHANNEL_OPTIONS.map(({ value, label, icon: Icon }) => {
+                            const selected = newPlace.notifyChannels.includes(value)
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => toggleNotifyChannel(value, 'new')}
+                                aria-pressed={selected}
+                                className={cn(
+                                  'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                                  selected
+                                    ? 'border-primary bg-primary/10 text-primary'
+                                    : 'border-border text-muted-foreground hover:border-muted-foreground/40'
+                                )}
+                              >
+                                <Icon className="w-3.5 h-3.5" />
+                                {label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {newPlace.notifyChannels.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Pick at least one way to hear about arrivals and departures here, or it won&apos;t notify you at all.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </>
@@ -704,6 +772,36 @@ export default function PlacesPage() {
                           className="w-full"
                         />
                       </div>
+                      <div className="space-y-1.5">
+                        <Label>Notify me via</Label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {NOTIFY_CHANNEL_OPTIONS.map(({ value, label, icon: Icon }) => {
+                            const selected = editPlace.notifyChannels.includes(value)
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => toggleNotifyChannel(value, 'edit')}
+                                aria-pressed={selected}
+                                className={cn(
+                                  'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                                  selected
+                                    ? 'border-primary bg-primary/10 text-primary'
+                                    : 'border-border text-muted-foreground hover:border-muted-foreground/40'
+                                )}
+                              >
+                                <Icon className="w-3.5 h-3.5" />
+                                {label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {editPlace.notifyChannels.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Pick at least one way to hear about arrivals and departures here, or it won&apos;t notify you at all.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </>
@@ -859,6 +957,24 @@ export default function PlacesPage() {
                       </>
                     )}
                   </div>
+                  {place.geofenceEnabled && (
+                    <div className="flex items-center gap-1.5 mt-2">
+                      {NOTIFY_CHANNEL_OPTIONS.filter((opt) =>
+                        (place.notifyChannels && place.notifyChannels.length > 0
+                          ? place.notifyChannels
+                          : DEFAULT_NOTIFY_CHANNELS
+                        ).includes(opt.value)
+                      ).map(({ value, label, icon: Icon }) => (
+                        <span
+                          key={value}
+                          title={label}
+                          className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-muted text-muted-foreground"
+                        >
+                          <Icon className="w-3 h-3" />
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground mt-2">
                     Radius: {place.radius}m
                   </p>

@@ -15,6 +15,11 @@ const createPlaceSchema = z.object({
   alertOnDeparture: z.boolean().default(true),
   icon: z.string().max(50).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default("#3B82F6"),
+  // Which channels a geofence arrival/departure alert for this place uses
+  // (in_app, push, email, sms) - mirrors notify_channels on tasks/events/
+  // reminders. Omitted or empty falls back to the recipient's own
+  // notification settings, same as every place created before this existed.
+  notifyChannels: z.array(z.enum(["in_app", "push", "email", "sms"])).optional(),
 })
 
 // Get saved places for a family
@@ -72,6 +77,7 @@ export async function GET(request: NextRequest) {
         alertOnDeparture: p.alert_on_departure,
         icon: p.icon,
         color: p.color,
+        notifyChannels: p.notify_channels,
         createdAt: p.created_at,
       })),
     })
@@ -137,11 +143,15 @@ export async function POST(request: NextRequest) {
     }
 
     const placeId = crypto.randomUUID()
+    const normalizedNotifyChannels =
+      validatedData.notifyChannels && validatedData.notifyChannels.length > 0
+        ? validatedData.notifyChannels
+        : null
     await sql`
       INSERT INTO saved_places (
         id, family_id, name, address, latitude, longitude, radius,
         geofence_enabled, alert_on_arrival, alert_on_departure,
-        icon, color, created_at, updated_at
+        icon, color, notify_channels, created_at, updated_at
       )
       VALUES (
         ${placeId},
@@ -156,6 +166,7 @@ export async function POST(request: NextRequest) {
         ${validatedData.alertOnDeparture},
         ${validatedData.icon || null},
         ${validatedData.color},
+        ${normalizedNotifyChannels},
         NOW(), NOW()
       )
     `

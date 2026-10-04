@@ -14,6 +14,7 @@ const updatePlaceSchema = z.object({
   alertOnDeparture: z.boolean().optional(),
   icon: z.string().max(50).optional().nullable(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  notifyChannels: z.array(z.enum(["in_app", "push", "email", "sms"])).optional(),
 })
 
 // Get a single place
@@ -63,6 +64,7 @@ export async function GET(
         alertOnDeparture: p.alert_on_departure,
         icon: p.icon,
         color: p.color,
+        notifyChannels: p.notify_channels,
         createdAt: p.created_at,
       },
     })
@@ -160,6 +162,10 @@ export async function PATCH(
       updates.push("color")
       values.push(validatedData.color)
     }
+    if (validatedData.notifyChannels !== undefined) {
+      updates.push("notify_channels")
+      values.push(true)
+    }
 
     if (updates.length === 0) {
       return NextResponse.json(
@@ -169,6 +175,12 @@ export async function PATCH(
     }
 
     // Execute update
+    const normalizedNotifyChannels =
+      validatedData.notifyChannels !== undefined
+        ? validatedData.notifyChannels.length > 0
+          ? validatedData.notifyChannels
+          : null
+        : undefined
     await sql`
       UPDATE saved_places SET
         name = COALESCE(${validatedData.name}, name),
@@ -181,6 +193,7 @@ export async function PATCH(
         alert_on_departure = COALESCE(${validatedData.alertOnDeparture}, alert_on_departure),
         icon = COALESCE(${validatedData.icon}, icon),
         color = COALESCE(${validatedData.color}, color),
+        notify_channels = COALESCE(${normalizedNotifyChannels ?? null}, notify_channels),
         updated_at = NOW()
       WHERE id = ${placeId}
     `
