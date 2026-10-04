@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -75,8 +76,28 @@ const RECURRENCE_OPTIONS = [
   { value: 'YEARLY', label: 'Yearly' },
 ]
 
+// Next.js requires any component that calls useSearchParams() to be wrapped
+// in a Suspense boundary, or the page fails to prerender at build time
+// ("useSearchParams() should be wrapped in a suspense boundary") - same
+// pattern as app/(dashboard)/settings/calendar-sync/page.tsx.
 export default function RemindersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20">
+          <Spinner className="w-8 h-8 text-primary" />
+        </div>
+      }
+    >
+      <RemindersPageContent />
+    </Suspense>
+  )
+}
+
+function RemindersPageContent() {
   const { user } = useAuth()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -115,6 +136,18 @@ export default function RemindersPage() {
   useEffect(() => {
     fetchReminders()
   }, [fetchReminders])
+
+  // The Home screen's quick-action row links here with ?new=1 to open
+  // straight into the create dialog - matching how its Event/New Task
+  // buttons land on a ready-to-fill form rather than a plain list. Strip
+  // the param right after so a later refresh (or the back button) doesn't
+  // reopen the dialog unexpectedly.
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setDialogOpen(true)
+      router.replace('/dashboard/reminders')
+    }
+  }, [searchParams, router])
 
   // Load the active family's adult members so a reminder can be assigned to
   // someone else (e.g. a spouse) - not just the signed-in user. Reminders

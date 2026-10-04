@@ -287,6 +287,12 @@ export default function DashboardPage() {
               <span className="hidden sm:inline">Event</span>
             </Link>
           </Button>
+          <Button variant="outline" size="sm" asChild className="shrink-0">
+            <Link href="/dashboard/reminders?new=1">
+              <Bell className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Reminder</span>
+            </Link>
+          </Button>
           <Button size="sm" asChild className="shrink-0">
             <Link href="/tasks/new">
               <ListTodo className="w-4 h-4 sm:mr-2" />
